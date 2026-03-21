@@ -2,6 +2,43 @@
 
 A full-stack, AI-native Real Estate CRM designed to fully automate telecom sales, field ops geofencing, and internal workflows under the Globussoft architecture.
 
+
+
+## 📞 Live AI Call Flow Schematic
+```mermaid
+sequenceDiagram
+    participant CRM as Universal CRM (100+ Providers)
+    participant Dialer as FastApi Backend Engine
+    participant Human as Target Lead (Human)
+    participant STT as Deepgram (Speech-to-Text)
+    participant LLM as Gemini 2.5 (AI Brain)
+    participant TTS as ElevenLabs (Voice)
+
+    CRM->>Dialer: 1. Background Poller retrieves untested leads
+    loop The AI Call Cycle
+        Dialer->>Human: 2. Initiates Telecom Call (Twilio/Exotel)
+        Human-->>Dialer: 3. Lead picks up the phone
+        
+        rect rgb(15, 23, 42)
+        loop Active Real-Time Conversation Stream
+            Human->>Dialer: Speaks (e.g. "I'm looking for a 3BHK")
+            Dialer->>STT: Streams raw audio via WebSockets
+            STT-->>Dialer: Transcribes speech instantly
+            Dialer->>LLM: Ingests transcript & custom Sales Prompt
+            LLM-->>Dialer: Generates exact response & qualification state
+            Dialer->>TTS: Converts AI text to audio stream
+            TTS-->>Dialer: Streams realistic voice bytes
+            Dialer->>Human: Plays audio to human speaker seamlessly
+        end
+        end
+    end
+
+    Human->>Dialer: 4. Human hangs up
+    Dialer->>LLM: 5. Submits full transcript for final analysis
+    LLM-->>Dialer: 6. Returns qualification status & smart follow-up notes
+    Dialer->>CRM: 7. Mutates CRM Object (Status to Warm/Closed + Note)
+```
+
 ## Features Developed
 
 1. **Multilingual AI Voice Agent (Dialer)**
