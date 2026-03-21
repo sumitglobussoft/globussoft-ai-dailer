@@ -2,7 +2,7 @@
 
 A full-stack, AI-native Real Estate CRM designed to fully automate telecom sales, field ops geofencing, and internal workflows under the Globussoft architecture.
 
-
+![Globussoft Generative AI Dialer Architecture](assets/ai_architecture.png)
 
 ## 📞 Live AI Call Flow Schematic
 ```mermaid
