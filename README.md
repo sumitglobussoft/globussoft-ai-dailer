@@ -19,7 +19,7 @@ sequenceDiagram
         Dialer->>Human: 2. Initiates Telecom Call (Twilio/Exotel)
         Human-->>Dialer: 3. Lead picks up the phone
         
-        rect rgb(15, 23, 42)
+        rect rgba(0, 0, 0, 0.05)
         loop Active Real-Time Conversation Stream
             Human->>Dialer: Speaks (e.g. "I'm looking for a 3BHK")
             Dialer->>STT: Streams raw audio via WebSockets
