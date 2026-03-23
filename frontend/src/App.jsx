@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import CallMonitor from './CallMonitor';
+import KnowledgeBase from './KnowledgeBase';
+import Sandbox from './Sandbox';
 import './index.css';
 
 const API_URL = "http://localhost:8000/api";
@@ -295,6 +298,9 @@ export default function App() {
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'whatsapp' ? 'active' : ''}`} onClick={() => setActiveTab('whatsapp')}>💬 WhatsApp Comms</button>}
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'fieldops' ? 'active' : ''}`} onClick={() => setActiveTab('fieldops')}>📍 Field Ops</button>}
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'integrations' ? 'active' : ''}`} onClick={() => setActiveTab('integrations')}>🔌 Integrations</button>}
+          {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}>🎙️ Monitor AI Calls</button>}
+          {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'knowledge' ? 'active' : ''}`} onClick={() => setActiveTab('knowledge')}>🧠 RAG Knowledge</button>}
+          {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'sandbox' ? 'active' : ''}`} onClick={() => setActiveTab('sandbox')}>🎯 AI Sandbox</button>}
           
           {/* RBAC Global Toggle */}
           <div className="role-selector" style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px'}}>
@@ -726,6 +732,18 @@ export default function App() {
               </table>
             </div>
           </div>
+        </div>
+      ) : activeTab === 'monitor' ? (
+        <div style={{padding: '1rem'}}>
+          <CallMonitor apiUrl={API_URL} />
+        </div>
+      ) : activeTab === 'knowledge' ? (
+        <div style={{padding: '1rem'}}>
+          <KnowledgeBase apiUrl={API_URL} />
+        </div>
+      ) : activeTab === 'sandbox' ? (
+        <div style={{padding: '1rem'}}>
+          <Sandbox apiUrl={API_URL} />
         </div>
       ) : (
         <div className="glass-panel" style={{maxWidth: '500px', margin: '0 auto', textAlign: 'center', padding: '3rem 2rem'}}>

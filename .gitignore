@@ -5,3 +5,6 @@ venv/
 .venv/
 *.db
 *.sqlite3
+deploy.zip
+deploy*.sh
+chroma_db/

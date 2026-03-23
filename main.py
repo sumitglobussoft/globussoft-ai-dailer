@@ -5,7 +5,7 @@ import urllib.parse
 import asyncio
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks, Request, Body, Header, HTTPException, WebSocket, APIRouter, Depends
+from fastapi import FastAPI, BackgroundTasks, Request, Body, Header, HTTPException, WebSocket, APIRouter, Depends, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from passlib.context import CryptContext
@@ -29,6 +29,16 @@ import importlib
 import inspect
 from crm_providers import BaseCRM
 from datetime import datetime
+
+try:
+    import chromadb
+    import fitz
+    chroma_client = chromadb.PersistentClient(path="./chroma_db")
+    knowledge_collection = chroma_client.get_or_create_collection(name="bdrpl_knowledge")
+except ImportError:
+    chroma_client = None
+    knowledge_collection = None
+
 
 load_dotenv()
 app = FastAPI()
@@ -87,6 +97,24 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
+def send_whatsapp_message(to_phone: str, body: str):
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN: return
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        if not to_phone.startswith("whatsapp:"):
+            if not to_phone.startswith("+"):
+                to_phone = "+91" + to_phone[-10:]
+            to_phone = "whatsapp:" + to_phone
+        from_phone = "whatsapp:" + TWILIO_PHONE_NUMBER
+        if not from_phone.startswith("whatsapp:+"):
+            print("WARNING: TWILIO_PHONE_NUMBER does not start with +, assuming sandbox mode formatting.")
+        msg = client.messages.create(body=body, from_=from_phone, to=to_phone)
+        from database import create_whatsapp_log
+        create_whatsapp_log(to_phone, body, "Omnichannel Brochure Trigger")
+        print(f"WhatsApp sent: {msg.sid}")
+    except Exception as e:
+        print(f"Failed to send whatsapp: {e}")
+
 DEFAULT_PROVIDER = os.getenv("DEFAULT_PROVIDER", "twilio").lower()
 
 # SDK Clients will be initialized per-request to prevent startup crashes if keys are missing
@@ -95,6 +123,10 @@ llm_client = None
 
 PUBLIC_URL = os.getenv("PUBLIC_SERVER_URL", "http://localhost:8000")
 active_tts_tasks = {}
+monitor_connections: dict[str, set[WebSocket]] = {}
+whisper_queues: dict[str, list[str]] = {}
+takeover_active: dict[str, bool] = {}
+twilio_websockets: dict[str, WebSocket] = {}
 
 class LeadCreate(BaseModel):
     first_name: str
@@ -325,6 +357,53 @@ async def create_integration(data: dict):
         print(f"Error saving integration: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.post("/api/knowledge/upload")
+async def upload_knowledge(file: UploadFile = File(...)):
+    if not knowledge_collection or not fitz:
+        raise HTTPException(status_code=500, detail="RAG dependencies (chromadb, PyMuPDF) not installed.")
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDFs are supported.")
+    
+    content = await file.read()
+    doc = fitz.open("pdf", content)
+    
+    text = ""
+    for page in doc:
+        text += page.get_text() + "\n"
+    
+    chunks = [c.strip() for c in text.split('\n\n') if len(c.strip()) > 50]
+    if not chunks:
+        return {"status": "error", "message": "No text found in PDF"}
+        
+    documents, metadatas, ids, embeddings = [], [], [], []
+    import google.generativeai as gai
+    gai.configure(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
+    
+    for i, chunk in enumerate(chunks):
+        try:
+            res = gai.embed_content(model="models/text-embedding-004", content=chunk, task_type="retrieval_document")
+            embeddings.append(res['embedding'])
+            documents.append(chunk)
+            metadatas.append({"source": file.filename, "chunk": i})
+            ids.append(f"{file.filename}_{i}")
+        except Exception as e:
+            print(f"Embedding error: {e}")
+            
+    if documents:
+        knowledge_collection.add(embeddings=embeddings, documents=documents, metadatas=metadatas, ids=ids)
+    return {"status": "success", "chunks_added": len(documents), "filename": file.filename}
+
+@app.get("/api/knowledge")
+def get_knowledge_files():
+    if not knowledge_collection: return []
+    data = knowledge_collection.get()
+    sources = set()
+    if data and data.get('metadatas'):
+        for meta in data['metadatas']:
+            sources.add(meta.get("source"))
+    return [{"filename": s} for s in sources]
+
+
 @app.post("/crm-webhook")
 async def handle_crm_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
@@ -371,6 +450,7 @@ async def dial_twilio(lead: dict):
         f"{PUBLIC_URL}/webhook/twilio"
         f"?name={urllib.parse.quote(lead['name'])}"
         f"&interest={urllib.parse.quote(lead['interest'])}"
+        f"&phone={urllib.parse.quote(lead['phone_number'])}"
     )
     try:
         call = client.calls.create(
@@ -385,6 +465,7 @@ async def dial_exotel(lead: dict):
         f"{PUBLIC_URL}/webhook/exotel"
         f"?name={urllib.parse.quote(lead['name'])}"
         f"&interest={urllib.parse.quote(lead['interest'])}"
+        f"&phone={urllib.parse.quote(lead['phone_number'])}"
     )
     url = f"https://api.exotel.com/v1/Accounts/{EXOTEL_ACCOUNT_SID}/Calls/connect.json"
     data = {
@@ -409,10 +490,9 @@ async def dynamic_webhook(provider: str, request: Request):
     host = PUBLIC_URL.replace("https://", "").replace("http://", "")
     name = urllib.parse.quote(request.query_params.get("name", ""))
     interest = urllib.parse.quote(request.query_params.get("interest", ""))
-    ws_url = f"wss://{host}/media-stream?name={name}&interest={interest}"
+    phone = urllib.parse.quote(request.query_params.get("phone", ""))
+    ws_url = f"wss://{host}/media-stream?name={name}&interest={interest}&phone={phone}"
     
-    # Both Twilio and Plivo respond perfectly to <Response><Connect><Stream url=""/></Connect></Response>
-    # Exotel expects VoiceBot applet routing typically, but this provides a fallback XML payload.
     return HTMLResponse(
         content=f'<Response><Connect><Stream url="{ws_url}" /></Connect></Response>',
         media_type="application/xml",
@@ -462,6 +542,7 @@ async def handle_media_stream(websocket: WebSocket):
 
     lead_name = websocket.query_params.get("name", "Customer")
     interest = websocket.query_params.get("interest", "our platform")
+    lead_phone = websocket.query_params.get("phone", "")
     stream_sid = None
     chat_history = []
 
@@ -494,19 +575,59 @@ async def handle_media_stream(websocket: WebSocket):
         sentence = result.channel.alternatives[0].transcript
         if sentence and result.is_final:
             chat_history.append({"role": "user", "parts": [{"text": sentence}]})
+            
+            if stream_sid:
+                for monitor in monitor_connections.get(stream_sid, set()):
+                    try:
+                        asyncio.create_task(monitor.send_json({"type": "transcript", "role": "user", "text": sentence}))
+                    except Exception:
+                        pass
+                
+                if takeover_active.get(stream_sid, False):
+                    return # Skip LLM generation if human took over
+
+                pending = whisper_queues.get(stream_sid, [])
+                if pending:
+                    for whisper in pending:
+                        chat_history.append({"role": "user", "parts": [{"text": f"Manager Whisper: {whisper}. Acknowledge this implicitly in your next response."}]})
+                    pending.clear()
+
+            # RAG Retrieval
+            rag_context = ""
+            if knowledge_collection:
+                try:
+                    import google.generativeai as gai
+                    gai.configure(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
+                    res = gai.embed_content(model="models/text-embedding-004", content=sentence, task_type="retrieval_query")
+                    query_emb = res['embedding']
+                    results = knowledge_collection.query(query_embeddings=[query_emb], n_results=2)
+                    if results and results.get('documents') and results['documents'][0]:
+                        docs = results['documents'][0]
+                        rag_context = "\n[KNOWLEDGE BASE RELEVANT INFO]:\n" + "\n---\n".join(docs)
+                except Exception as e:
+                    print(f"RAG error: {e}")
+            
+            final_system_instruction = dynamic_context + rag_context
 
             try:
                 response = await llm_client.aio.models.generate_content(
                     model="gemini-2.5-flash",
                     contents=chat_history,
                     config=types.GenerateContentConfig(
-                        system_instruction=dynamic_context
+                        system_instruction=final_system_instruction
                     ),
                 )
 
                 chat_history.append(
                     {"role": "model", "parts": [{"text": response.text}]}
                 )
+                
+                if stream_sid:
+                    for monitor in monitor_connections.get(stream_sid, set()):
+                        try:
+                            asyncio.create_task(monitor.send_json({"type": "transcript", "role": "agent", "text": response.text}))
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"Error fetching response from Gemini: {e}")
                 return
@@ -541,6 +662,11 @@ async def handle_media_stream(websocket: WebSocket):
 
             if data["event"] == "start":
                 stream_sid = data["start"]["streamSid"]
+                twilio_websockets[stream_sid] = websocket
+                monitor_connections[stream_sid] = set()
+                whisper_queues[stream_sid] = []
+                takeover_active[stream_sid] = False
+                
                 # Send the initial greeting
                 active_tts_tasks[stream_sid] = asyncio.create_task(
                     synthesize_and_send_audio(
@@ -559,8 +685,119 @@ async def handle_media_stream(websocket: WebSocket):
     except Exception as e:
         print(f"Error in media stream handler: {e}")
     finally:
+        if stream_sid in twilio_websockets:
+            del twilio_websockets[stream_sid]
         await dg_connection.finish()
         await websocket.close()
+        
+        # Omnichannel Summary & WhatsApp Trigger
+        if len(chat_history) > 2:
+            try:
+                transcript_text = "\n".join([f"{m['role']}: {m['parts'][0]['text']}" for m in chat_history if isinstance(m, dict) and 'parts' in m])
+                summary_prompt = "You are a sales evaluator. Analyze the transcript. Return strictly a valid JSON object with: {'sentiment': 'Cold/Warm/Hot', 'requires_brochure': true/false, 'note': 'short summary of next steps'}. If the lead asks for details, pricing, or a brochure, set requires_brochure to true."
+                res = await llm_client.aio.models.generate_content(
+                    model="gemini-2.5-flash", 
+                    contents=transcript_text,
+                    config=types.GenerateContentConfig(system_instruction=summary_prompt)
+                )
+                import json
+                text = res.text.replace("```json", "").replace("```", "").strip()
+                outcome = json.loads(text)
+                
+                if lead_phone and outcome.get("requires_brochure"):
+                    send_whatsapp_message(lead_phone, f"Hi {lead_name}, thanks for taking the time to speak just now. Here is the highly detailed property brochure you requested as discussed: https://globussoft.ai/bdrpl/luxury_brochure.pdf\n\nLet me know if you have any questions!\n\n- Globussoft AI Reception")
+                
+                if lead_phone:
+                    from database import update_call_note
+                    update_call_note("ws_" + str(stream_sid), outcome.get("note", "Call completed via Dialer."), lead_phone)
+            except Exception as e:
+                print(f"Omnichannel intent trigger error: {e}")
+
+@app.websocket("/ws/sandbox")
+async def sandbox_stream(websocket: WebSocket):
+    await websocket.accept()
+    dg = DeepgramClient(os.getenv("DEEPGRAM_API_KEY", "dummy"))
+    dg_conn = dg.listen.websocket.v("1")
+    llm = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
+    chat_hist = []
+    
+    async def on_message(self, result, **kwargs):
+        sentence = result.channel.alternatives[0].transcript
+        if sentence and result.is_final:
+            chat_hist.append({"role": "user", "parts": [{"text": sentence}]})
+            await websocket.send_json({"type": "transcript", "role": "user", "text": sentence})
+            try:
+                response = await llm.aio.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=chat_hist,
+                    config=types.GenerateContentConfig(system_instruction="You are in AI sandbox test mode. A sales manager is interacting with you. Be extremely aggressive answering sales objections, keeping answers to one line.")
+                )
+                chat_hist.append({"role": "model", "parts": [{"text": response.text}]})
+                
+                # Fetch Audio Bytes
+                url = f"https://api.elevenlabs.io/v1/text-to-speech/{os.getenv('ELEVENLABS_VOICE_ID')}/stream?output_format=mp3_44100_128"
+                headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
+                payload = {"text": response.text, "model_id": "eleven_turbo_v2"}
+                async with httpx.AsyncClient() as client:
+                    async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                        async for chunk in resp.aiter_bytes(chunk_size=4000):
+                            if chunk:
+                                await websocket.send_json({"type": "audio", "payload": base64.b64encode(chunk).decode('utf-8')})
+                
+                await websocket.send_json({"type": "transcript", "role": "agent", "text": response.text})
+            except Exception as e:
+                pass
+                
+    dg_conn.on(LiveTranscriptionEvents.Transcript, on_message)
+    await dg_conn.start(LiveOptions(
+        model="nova-3", language="en-US", encoding="linear16", sample_rate=16000, channels=1, endpointing=True
+    ))
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "audio_chunk":
+                raw_bytes = base64.b64decode(data["payload"])
+                await dg_conn.send(raw_bytes)
+    except Exception as e:
+        pass
+    finally:
+        await dg_conn.finish()
+        await websocket.close()
+
+@app.websocket("/ws/monitor/{stream_sid}")
+async def monitor_call(websocket: WebSocket, stream_sid: str):
+    await websocket.accept()
+    if stream_sid not in monitor_connections:
+        monitor_connections[stream_sid] = set()
+    monitor_connections[stream_sid].add(websocket)
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("action") == "whisper":
+                q = whisper_queues.setdefault(stream_sid, [])
+                q.append(data.get("text", ""))
+            elif data.get("action") == "takeover":
+                takeover_active[stream_sid] = True
+                # Cancel active TTS
+                if stream_sid in active_tts_tasks and not active_tts_tasks[stream_sid].done():
+                    active_tts_tasks[stream_sid].cancel()
+            elif data.get("action") == "audio_chunk" and takeover_active.get(stream_sid, False):
+                # Manager mic stream -> Twilio
+                target_ws = twilio_websockets.get(stream_sid)
+                if target_ws:
+                    await target_ws.send_text(json.dumps({
+                        "event": "media",
+                        "streamSid": stream_sid,
+                        "media": { "payload": data.get("payload") }
+                    }))
+    except Exception as e:
+        pass
+    finally:
+        if stream_sid in monitor_connections and websocket in monitor_connections[stream_sid]:
+            monitor_connections[stream_sid].remove(websocket)
+
 
 @app.post("/exotel/recording-ready")
 async def handle_exotel_recording(request: Request, background_tasks: BackgroundTasks):
