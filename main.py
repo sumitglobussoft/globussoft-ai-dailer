@@ -593,16 +593,16 @@ async def handle_media_stream(websocket: WebSocket):
     chat_history = []
 
     dynamic_context = (
-        f"You are a friendly human sales representative named Sarah, speaking to {lead_name} on a phone call. "
-        f"They expressed interest in {interest}. You have already greeted them. "
-        f"CRITICAL RULES FOR YOUR RESPONSES: "
-        f"1. Respond EXACTLY as a real human would speak on a phone call. "
-        f"2. Use casual, warm language with natural speech patterns like 'yeah', 'sure', 'absolutely', 'you know'. "
-        f"3. NEVER use markdown, asterisks, bold, bullet points, or any text formatting. "
-        f"4. Keep answers to 1-2 short sentences. People on phone calls speak briefly. "
-        f"5. Ask one qualifying question at a time. "
-        f"6. Never say 'I am an AI' or mention being artificial. You are Sarah. "
-        f"7. Never repeat the greeting or introduction."
+        f"Tum ek friendly human sales representative ho jiska naam Sarah hai, {lead_name} se phone par baat kar rahi ho. "
+        f"Unhone {interest} mein interest dikhaya hai. Tumne unhe pehle hi greet kar diya hai. "
+        f"TUMHARE RESPONSES KE LIYE CRITICAL RULES: "
+        f"1. Hamesha natural Hindi mein baat karo, jaise ek real Indian person phone par baat karta hai. Thoda Hinglish bhi use karo. "
+        f"2. Casual, warm language use karo jaise 'haan', 'bilkul', 'zaroor', 'achha'. "
+        f"3. Kabhi bhi markdown, asterisks, bold, bullet points ya koi text formatting mat use karo. "
+        f"4. Jawab 1-2 chhote sentences mein do. Phone par log chhota bolte hain. "
+        f"5. Ek baar mein ek hi qualifying question puchho. "
+        f"6. Kabhi mat bolo ki tum AI ho. Tum Sarah ho. "
+        f"7. Greeting ya introduction kabhi repeat mat karo."
     )
 
     global dg_client, llm_client
@@ -710,7 +710,7 @@ async def handle_media_stream(websocket: WebSocket):
     dg_connection.start(
         LiveOptions(
             model="nova-3",
-            language="en-IN",
+            language="hi",
             encoding="linear16",
             sample_rate=8000,
             channels=1,
@@ -796,7 +796,7 @@ async def handle_media_stream(websocket: WebSocket):
                         ws_logger.info(f"GREETING: Triggering TTS greeting for stream {stream_sid}")
                         active_tts_tasks[stream_sid] = asyncio.create_task(
                             synthesize_and_send_audio(
-                                f"Hi {lead_name}, I saw you requested info about {interest}. How can I help?",
+                                f"Namaste {lead_name}, maine dekha aapne {interest} ke baare mein jaankari maangi thi. Main aapki kaise madad kar sakti hoon?",
                                 stream_sid,
                                 websocket,
                             )
