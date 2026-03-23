@@ -88,10 +88,10 @@ async def poll_crm_leads():
             
         await asyncio.sleep(60) # Poll every 60 seconds
 
-EXOTEL_API_KEY = os.getenv("EXOTEL_API_KEY")
-EXOTEL_API_TOKEN = os.getenv("EXOTEL_API_TOKEN")
-EXOTEL_ACCOUNT_SID = os.getenv("EXOTEL_ACCOUNT_SID", "YOUR_EXOTEL_ACCOUNT_SID")
-EXOTEL_CALLER_ID = os.getenv("EXOTEL_CALLER_ID", "YOUR_EXOTEL_NUMBER")
+EXOTEL_API_KEY = (os.getenv("EXOTEL_API_KEY") or "").strip()
+EXOTEL_API_TOKEN = (os.getenv("EXOTEL_API_TOKEN") or "").strip()
+EXOTEL_ACCOUNT_SID = (os.getenv("EXOTEL_ACCOUNT_SID") or "YOUR_EXOTEL_ACCOUNT_SID").strip()
+EXOTEL_CALLER_ID = (os.getenv("EXOTEL_CALLER_ID") or "YOUR_EXOTEL_NUMBER").strip()
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
