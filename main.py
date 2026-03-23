@@ -593,10 +593,11 @@ async def handle_media_stream(websocket: WebSocket):
     chat_history = []
 
     dynamic_context = (
-        f"You are an AI sales SDR speaking to {lead_name}. "
-        f"Keep answers under 2 sentences. "
-        f"First sentence MUST be: "
-        f"'Hi {lead_name}, I saw you requested info about {interest}. How can I help?'"
+        f"You are an AI sales SDR speaking to {lead_name} on a phone call. "
+        f"They expressed interest in {interest}. "
+        f"You have already greeted them. Now respond naturally to what they say. "
+        f"Keep answers concise — 1-2 sentences max. Be friendly, helpful, and conversational. "
+        f"Ask qualifying questions to understand their needs. Never repeat the greeting."
     )
 
     global dg_client, llm_client
