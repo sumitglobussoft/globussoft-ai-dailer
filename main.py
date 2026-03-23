@@ -521,8 +521,8 @@ async def synthesize_and_send_audio(
     headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
     payload = {
         "text": text,
-        "model_id": "eleven_turbo_v2",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {"stability": 0.4, "similarity_boost": 0.75, "style": 0.15},
     }
     tts_logger.info(f"TTS: is_exotel={is_exotel}, format={output_format}")
     try:
@@ -697,7 +697,7 @@ async def handle_media_stream(websocket: WebSocket):
         LiveOptions(
             model="nova-3",
             language="en-IN",
-            encoding="mulaw",
+            encoding="linear16",
             sample_rate=8000,
             channels=1,
             endpointing=True,
