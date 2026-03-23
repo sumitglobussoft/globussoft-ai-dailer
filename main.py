@@ -522,7 +522,7 @@ async def synthesize_and_send_audio(
     payload = {
         "text": text,
         "model_id": "eleven_multilingual_v2",
-        "voice_settings": {"stability": 0.4, "similarity_boost": 0.75, "style": 0.15},
+        "voice_settings": {"stability": 0.3, "similarity_boost": 0.8, "style": 0.2},
     }
     tts_logger.info(f"TTS: is_exotel={is_exotel}, format={output_format}")
     try:
@@ -593,11 +593,16 @@ async def handle_media_stream(websocket: WebSocket):
     chat_history = []
 
     dynamic_context = (
-        f"You are an AI sales SDR speaking to {lead_name} on a phone call. "
-        f"They expressed interest in {interest}. "
-        f"You have already greeted them. Now respond naturally to what they say. "
-        f"Keep answers concise — 1-2 sentences max. Be friendly, helpful, and conversational. "
-        f"Ask qualifying questions to understand their needs. Never repeat the greeting."
+        f"You are a friendly human sales representative named Sarah, speaking to {lead_name} on a phone call. "
+        f"They expressed interest in {interest}. You have already greeted them. "
+        f"CRITICAL RULES FOR YOUR RESPONSES: "
+        f"1. Respond EXACTLY as a real human would speak on a phone call. "
+        f"2. Use casual, warm language with natural speech patterns like 'yeah', 'sure', 'absolutely', 'you know'. "
+        f"3. NEVER use markdown, asterisks, bold, bullet points, or any text formatting. "
+        f"4. Keep answers to 1-2 short sentences. People on phone calls speak briefly. "
+        f"5. Ask one qualifying question at a time. "
+        f"6. Never say 'I am an AI' or mention being artificial. You are Sarah. "
+        f"7. Never repeat the greeting or introduction."
     )
 
     global dg_client, llm_client
@@ -625,6 +630,9 @@ async def handle_media_stream(websocket: WebSocket):
         """Handle final transcription → LLM → TTS pipeline."""
         sentence = result.channel.alternatives[0].transcript
         if sentence and result.is_final:
+            import logging
+            conv_logger = logging.getLogger("uvicorn.error")
+            conv_logger.info(f"USER SAID: {sentence}")
             chat_history.append({"role": "user", "parts": [{"text": sentence}]})
 
             async def _process_transcript():
@@ -673,6 +681,7 @@ async def handle_media_stream(websocket: WebSocket):
                     chat_history.append(
                         {"role": "model", "parts": [{"text": response.text}]}
                     )
+                    conv_logger.info(f"AI RESPONSE: {response.text[:200]}")
 
                     if stream_sid:
                         for monitor in monitor_connections.get(stream_sid, set()):
@@ -685,8 +694,12 @@ async def handle_media_stream(websocket: WebSocket):
                     return
 
                 if stream_sid:
+                    import re
+                    clean_text = re.sub(r'[\*\_\#\`\~\>\|]', '', response.text)
+                    clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)
+                    clean_text = clean_text.strip()
                     active_tts_tasks[stream_sid] = asyncio.create_task(
-                        synthesize_and_send_audio(response.text, stream_sid, websocket)
+                        synthesize_and_send_audio(clean_text, stream_sid, websocket)
                     )
 
             asyncio.run_coroutine_threadsafe(_process_transcript(), loop)
