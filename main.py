@@ -505,11 +505,18 @@ async def synthesize_and_send_audio(
     text: str, stream_sid: str, websocket: WebSocket
 ):
     import logging
+    import struct
     tts_logger = logging.getLogger("uvicorn.error")
     tts_logger.info(f"TTS START: text='{text[:60]}...', sid={stream_sid}")
+    is_exotel = not stream_sid.startswith("SM")
+    # Exotel uses L16 (linear16 PCM) at 8kHz; Twilio uses mulaw 8kHz
+    if is_exotel:
+        output_format = "pcm_16000"  # Get 16kHz PCM, we'll downsample to 8kHz
+    else:
+        output_format = "ulaw_8000"
     url = (
         f"https://api.elevenlabs.io/v1/text-to-speech/"
-        f"{os.getenv('ELEVENLABS_VOICE_ID')}/stream?output_format=ulaw_8000"
+        f"{os.getenv('ELEVENLABS_VOICE_ID')}/stream?output_format={output_format}"
     )
     headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
     payload = {
@@ -517,8 +524,7 @@ async def synthesize_and_send_audio(
         "model_id": "eleven_turbo_v2",
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
     }
-    is_exotel = not stream_sid.startswith("SM")  # Exotel stream_sids are hex, Twilio starts with SM
-    tts_logger.info(f"TTS: is_exotel={is_exotel}, voice_id={os.getenv('ELEVENLABS_VOICE_ID')}")
+    tts_logger.info(f"TTS: is_exotel={is_exotel}, format={output_format}")
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream(
@@ -530,19 +536,31 @@ async def synthesize_and_send_audio(
                     tts_logger.error(f"TTS ElevenLabs error: {body[:200]}")
                     return
                 chunk_count = 0
-                async for chunk in response.aiter_bytes(chunk_size=320):
+                pcm_buffer = b""
+                async for chunk in response.aiter_bytes(chunk_size=640):
                     if chunk:
-                        chunk_count += 1
                         if is_exotel:
-                            # Exotel: send as JSON text with base64 payload, small chunks
-                            b64_chunk = base64.b64encode(chunk).decode('utf-8')
-                            await websocket.send_text(json.dumps({
-                                "event": "media",
-                                "stream_sid": stream_sid,
-                                "media": {"payload": b64_chunk}
-                            }))
+                            # Downsample 16kHz to 8kHz: take every other 16-bit sample
+                            pcm_buffer += chunk
+                            # Process in multiples of 4 bytes (2 samples of 2 bytes each)
+                            usable = len(pcm_buffer) - (len(pcm_buffer) % 4)
+                            if usable >= 320:
+                                raw = pcm_buffer[:usable]
+                                pcm_buffer = pcm_buffer[usable:]
+                                # Take every other 16-bit sample (downsample 2:1)
+                                downsampled = b""
+                                for i in range(0, len(raw), 4):
+                                    downsampled += raw[i:i+2]
+                                b64_chunk = base64.b64encode(downsampled).decode('utf-8')
+                                await websocket.send_text(json.dumps({
+                                    "event": "media",
+                                    "stream_sid": stream_sid,
+                                    "media": {"payload": b64_chunk}
+                                }))
+                                chunk_count += 1
                         else:
-                            # Twilio: send JSON-wrapped base64 audio
+                            # Twilio: send JSON-wrapped base64 mulaw audio
+                            chunk_count += 1
                             await websocket.send_text(
                                 json.dumps(
                                     {
