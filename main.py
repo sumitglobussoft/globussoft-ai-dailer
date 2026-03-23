@@ -465,7 +465,7 @@ async def dial_exotel(lead: dict):
     logger = logging.getLogger("uvicorn.error")
     # Use the Exotel Landing Flow App which has the Voicebot applet
     # configured to connect to our wss://test.callified.ai/media-stream
-    exotel_app_id = os.getenv("EXOTEL_APP_ID", "1198056")
+    exotel_app_id = os.getenv("EXOTEL_APP_ID", "1210468")
     exoml_url = f"http://my.exotel.com/exoml/start/{exotel_app_id}"
     url = f"https://api.exotel.com/v1/Accounts/{EXOTEL_ACCOUNT_SID}/Calls/connect.json"
     data = {
