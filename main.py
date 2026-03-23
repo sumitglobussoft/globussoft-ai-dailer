@@ -642,7 +642,7 @@ async def handle_media_stream(websocket: WebSocket):
     dg_connection.on(LiveTranscriptionEvents.SpeechStarted, on_speech_started)
     dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
 
-    await dg_connection.start(
+    dg_connection.start(
         LiveOptions(
             model="nova-3",
             language="en-IN",
@@ -678,7 +678,7 @@ async def handle_media_stream(websocket: WebSocket):
                     )
                 )
             elif data["event"] == "media":
-                await dg_connection.send(
+                dg_connection.send(
                     base64.b64decode(data["media"]["payload"])
                 )
             elif data["event"] == "stop":
@@ -689,7 +689,7 @@ async def handle_media_stream(websocket: WebSocket):
     finally:
         if stream_sid in twilio_websockets:
             del twilio_websockets[stream_sid]
-        await dg_connection.finish()
+        dg_connection.finish()
         await websocket.close()
         
         # Omnichannel Summary & WhatsApp Trigger
