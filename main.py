@@ -660,6 +660,8 @@ async def handle_media_stream(websocket: WebSocket):
     )
 
     import logging
+    import json as _json
+    import uuid as _uuid
     ws_logger = logging.getLogger("uvicorn.error")
     ws_logger.info(f"Media stream handler started for {lead_name}")
     greeting_sent = False
@@ -680,8 +682,7 @@ async def handle_media_stream(websocket: WebSocket):
                 audio_data = msg["bytes"]
                 # Generate a stream_sid for Exotel if we don't have one
                 if not stream_sid:
-                    import uuid
-                    stream_sid = f"exotel-{uuid.uuid4().hex[:12]}"
+                    stream_sid = f"exotel-{_uuid.uuid4().hex[:12]}"
                     twilio_websockets[stream_sid] = websocket
                     monitor_connections[stream_sid] = set()
                     whisper_queues[stream_sid] = []
@@ -705,7 +706,7 @@ async def handle_media_stream(websocket: WebSocket):
             # Handle text frames (Twilio sends JSON)
             elif "text" in msg and msg["text"]:
                 try:
-                    data = json.loads(msg["text"])
+                    data = _json.loads(msg["text"])
                 except Exception as e:
                     ws_logger.warning(f"Failed to parse WS text: {e}")
                     continue
@@ -735,10 +736,16 @@ async def handle_media_stream(websocket: WebSocket):
     except Exception as e:
         print(f"Error in media stream handler: {e}")
     finally:
-        if stream_sid in twilio_websockets:
+        if stream_sid and stream_sid in twilio_websockets:
             del twilio_websockets[stream_sid]
-        dg_connection.finish()
-        await websocket.close()
+        try:
+            dg_connection.finish()
+        except Exception:
+            pass
+        try:
+            await websocket.close()
+        except Exception:
+            pass
         
         # Omnichannel Summary & WhatsApp Trigger
         if len(chat_history) > 2:
