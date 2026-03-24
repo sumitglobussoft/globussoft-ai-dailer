@@ -64,6 +64,10 @@ export default function App() {
   // GenAI Email Modal State
   const [emailDraft, setEmailDraft] = useState(null);
 
+  // Pronunciation Guide State
+  const [pronunciations, setPronunciations] = useState([]);
+  const [pronFormData, setPronFormData] = useState({ word: '', phonetic: '' });
+
   const fetchLeads = async () => {
     try {
       const res = await fetch(`${API_URL}/leads`);
@@ -103,6 +107,10 @@ export default function App() {
     try { const res = await fetch(`${API_URL}/integrations`); setIntegrations(await res.json()); } catch(e){}
   };
 
+  const fetchPronunciations = async () => {
+    try { const res = await fetch(`${API_URL}/pronunciation`); setPronunciations(await res.json()); } catch(e){}
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchSites();
@@ -111,6 +119,7 @@ export default function App() {
     fetchWhatsappLogs();
     fetchAnalytics();
     fetchIntegrations();
+    fetchPronunciations();
   }, []);
 
   const handleStatusChange = async (leadId, newStatus) => {
@@ -327,6 +336,27 @@ export default function App() {
     setLoading(false);
   };
 
+  const handleAddPronunciation = async (e) => {
+    e.preventDefault();
+    if (!pronFormData.word.trim() || !pronFormData.phonetic.trim()) return;
+    try {
+      await fetch(`${API_URL}/pronunciation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pronFormData)
+      });
+      setPronFormData({ word: '', phonetic: '' });
+      fetchPronunciations();
+    } catch(e) { console.error(e); }
+  };
+
+  const handleDeletePronunciation = async (id) => {
+    try {
+      await fetch(`${API_URL}/pronunciation/${id}`, { method: 'DELETE' });
+      fetchPronunciations();
+    } catch(e) { console.error(e); }
+  };
+
   return (
     <div className="dashboard-container">
       <header className="header" style={{display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center'}}>
@@ -345,6 +375,7 @@ export default function App() {
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}>🎙️ Monitor AI Calls</button>}
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'knowledge' ? 'active' : ''}`} onClick={() => setActiveTab('knowledge')}>🧠 RAG Knowledge</button>}
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'sandbox' ? 'active' : ''}`} onClick={() => setActiveTab('sandbox')}>🎯 AI Sandbox</button>}
+          {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>}
           
           {/* RBAC Global Toggle */}
           <div className="role-selector" style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px'}}>
@@ -802,6 +833,93 @@ export default function App() {
       ) : activeTab === 'sandbox' ? (
         <div style={{padding: '1rem'}}>
           <Sandbox apiUrl={API_URL} />
+        </div>
+      ) : activeTab === 'settings' ? (
+        <div style={{padding: '1rem', maxWidth: '800px', margin: '0 auto'}}>
+          <div className="wa-header" style={{borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '2rem'}}>
+            <h3><span style={{color: '#f59e0b'}}>AI Voice</span> Settings</h3>
+            <p>Configure how the AI pronounces product names, brand names, and technical terms during calls.</p>
+          </div>
+
+          <div className="glass-panel" style={{marginBottom: '2rem'}}>
+            <h4 style={{marginTop: 0, marginBottom: '1.5rem', fontSize: '1.1rem', fontWeight: 600}}>🗣️ Pronunciation Guide</h4>
+            <p style={{color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.5rem'}}>
+              Teach the AI how to speak your product names correctly. The AI will use the phonetic version in conversations.
+            </p>
+
+            <form onSubmit={handleAddPronunciation} style={{display: 'flex', gap: '12px', marginBottom: '2rem', alignItems: 'flex-end'}}>
+              <div className="form-group" style={{marginBottom: 0, flex: 1}}>
+                <label>Written Word</label>
+                <input 
+                  className="form-input" 
+                  required 
+                  value={pronFormData.word} 
+                  onChange={e => setPronFormData({...pronFormData, word: e.target.value})} 
+                  placeholder="e.g. Adsgpt" 
+                />
+              </div>
+              <div style={{fontSize: '1.5rem', color: '#64748b', paddingBottom: '8px'}}>→</div>
+              <div className="form-group" style={{marginBottom: 0, flex: 1}}>
+                <label>How to Pronounce</label>
+                <input 
+                  className="form-input" 
+                  required 
+                  value={pronFormData.phonetic} 
+                  onChange={e => setPronFormData({...pronFormData, phonetic: e.target.value})} 
+                  placeholder="e.g. Ads G P T" 
+                />
+              </div>
+              <button type="submit" className="btn-primary" style={{height: '46px', padding: '0 20px', whiteSpace: 'nowrap'}}>
+                + Add Rule
+              </button>
+            </form>
+
+            {pronunciations.length === 0 ? (
+              <div style={{padding: '2rem', textAlign: 'center', color: '#64748b', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>
+                No pronunciation rules added yet. Add one above to get started!
+              </div>
+            ) : (
+              <table className="leads-table">
+                <thead>
+                  <tr>
+                    <th>Written Word</th>
+                    <th>AI Says</th>
+                    <th>Added</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pronunciations.map(p => (
+                    <tr key={p.id}>
+                      <td style={{fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace'}}>{p.word}</td>
+                      <td style={{color: '#4ade80', fontStyle: 'italic'}}>🔊 "{p.phonetic}"</td>
+                      <td style={{color: '#94a3b8', fontSize: '0.85rem'}}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
+                      <td>
+                        <button 
+                          className="btn-call" 
+                          style={{background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)', padding: '4px 12px', fontSize: '0.8rem'}}
+                          onClick={() => handleDeletePronunciation(p.id)}
+                        >
+                          🗑️ Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="glass-panel" style={{background: 'rgba(245, 158, 11, 0.05)', border: '1px solid rgba(245, 158, 11, 0.15)'}}>
+            <h4 style={{marginTop: 0, color: '#f59e0b', fontSize: '0.95rem'}}>💡 How it works</h4>
+            <p style={{color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: 1.7}}>
+              The pronunciation guide is injected into the AI's prompt at the start of every call.
+              When the AI generates a response containing a mapped word, it will use the phonetic version instead.
+              The TTS engine then speaks the phonetic text, resulting in correct pronunciation.
+              <br/><br/>
+              <strong style={{color: '#e2e8f0'}}>Example:</strong> If you add "Adsgpt" → "Ads G P T", the AI will say "Ads G P T" instead of trying to sound out "Adsgpt".
+            </p>
+          </div>
         </div>
       ) : (
         <div className="glass-panel" style={{maxWidth: '500px', margin: '0 auto', textAlign: 'center', padding: '3rem 2rem'}}>
