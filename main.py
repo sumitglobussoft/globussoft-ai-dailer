@@ -663,7 +663,7 @@ async def handle_media_stream(websocket: WebSocket):
     if not dg_client:
         dg_client = DeepgramClient(os.getenv("DEEPGRAM_API_KEY", "dummy"))
     if not llm_client:
-        llm_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
+        llm_client = genai.Client(api_key=(os.getenv("GEMINI_API_KEY") or "dummy").strip())
 
     dg_connection = dg_client.listen.websocket.v("1")
     loop = asyncio.get_event_loop()
@@ -744,7 +744,9 @@ async def handle_media_stream(websocket: WebSocket):
                             except Exception:
                                 pass
                 except Exception as e:
-                    print(f"Error fetching response from Gemini: {e}")
+                    import traceback
+                    conv_logger.error(f"Error fetching response from Gemini: {e}")
+                    conv_logger.error(traceback.format_exc())
                     return
 
                 if stream_sid:
