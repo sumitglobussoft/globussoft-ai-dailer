@@ -7,6 +7,66 @@ import './index.css';
 const API_URL = "/api";
 
 export default function App() {
+  // Auth State
+  const [authToken, setAuthToken] = useState(localStorage.getItem('authToken') || null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authPage, setAuthPage] = useState('login'); // 'login' or 'signup'
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authForm, setAuthForm] = useState({ org_name: '', full_name: '', email: '', password: '' });
+
+  // Check token on mount
+  useEffect(() => {
+    if (authToken) {
+      fetch(`${API_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(u => setCurrentUser(u))
+        .catch(() => { setAuthToken(null); localStorage.removeItem('authToken'); });
+    }
+  }, [authToken]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthError(''); setAuthLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authForm.email, password: authForm.password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Login failed');
+      localStorage.setItem('authToken', data.access_token);
+      setAuthToken(data.access_token);
+      setCurrentUser(data.user);
+    } catch (err) { setAuthError(err.message); }
+    setAuthLoading(false);
+  };
+
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setAuthError(''); setAuthLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/signup`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authForm)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Signup failed');
+      localStorage.setItem('authToken', data.access_token);
+      setAuthToken(data.access_token);
+      setCurrentUser(data.user);
+    } catch (err) { setAuthError(err.message); }
+    setAuthLoading(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    setAuthToken(null);
+    setCurrentUser(null);
+    setAuthForm({ org_name: '', full_name: '', email: '', password: '' });
+  };
+
+
   const [activeTab, setActiveTab] = useState('crm');
   const [leads, setLeads] = useState([]);
   const [sites, setSites] = useState([]);
@@ -77,6 +137,78 @@ export default function App() {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgProducts, setOrgProducts] = useState([]);
   const [scraping, setScraping] = useState(null); // product_id being scraped
+
+  // ─── AUTH PAGES (after all hooks) ───
+  if (!authToken || !currentUser) {
+    return (
+      <div style={{minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'linear-gradient(135deg, #0f0c29, #302b63, #24243e)', padding: '20px'}}>
+        <div style={{width: '100%', maxWidth: '440px'}}>
+          <div style={{textAlign: 'center', marginBottom: '2rem'}}>
+            <h1 style={{fontSize: '2rem', fontWeight: 800, background: 'linear-gradient(135deg, #a78bfa, #22d3ee)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>
+              🤖 Callified AI
+            </h1>
+            <p style={{color: '#94a3b8', fontSize: '0.95rem'}}>AI-Powered Lead Qualification Platform</p>
+          </div>
+
+          <div className="glass-panel" style={{padding: '2rem'}}>
+            <div style={{display: 'flex', marginBottom: '1.5rem', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)'}}>
+              <button onClick={() => { setAuthPage('login'); setAuthError(''); }}
+                style={{flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                  background: authPage === 'login' ? 'rgba(167,139,250,0.2)' : 'transparent',
+                  color: authPage === 'login' ? '#a78bfa' : '#64748b'}}>
+                Login
+              </button>
+              <button onClick={() => { setAuthPage('signup'); setAuthError(''); }}
+                style={{flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                  background: authPage === 'signup' ? 'rgba(34,211,238,0.2)' : 'transparent',
+                  color: authPage === 'signup' ? '#22d3ee' : '#64748b'}}>
+                Sign Up
+              </button>
+            </div>
+
+            {authError && (
+              <div style={{background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '10px 14px', marginBottom: '1rem', color: '#fca5a5', fontSize: '0.85rem'}}>
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={authPage === 'login' ? handleLogin : handleSignup}>
+              {authPage === 'signup' && (
+                <>
+                  <div className="form-group">
+                    <label>Organization Name</label>
+                    <input className="form-input" placeholder="e.g. Globussoft" required
+                      value={authForm.org_name} onChange={e => setAuthForm({...authForm, org_name: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label>Your Full Name</label>
+                    <input className="form-input" placeholder="e.g. Sumit Kumar" required
+                      value={authForm.full_name} onChange={e => setAuthForm({...authForm, full_name: e.target.value})} />
+                  </div>
+                </>
+              )}
+              <div className="form-group">
+                <label>Email</label>
+                <input className="form-input" type="email" placeholder="you@company.com" required
+                  value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input className="form-input" type="password" placeholder="••••••••" required minLength={6}
+                  value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} />
+              </div>
+              <button type="submit" className="btn-primary" disabled={authLoading}
+                style={{width: '100%', padding: '12px', marginTop: '0.5rem', fontSize: '1rem', fontWeight: 700,
+                  background: authPage === 'login' ? 'linear-gradient(135deg, #a78bfa, #7c3aed)' : 'linear-gradient(135deg, #22d3ee, #06b6d4)'}}>
+                {authLoading ? '⏳ Please wait...' : (authPage === 'login' ? '🔐 Login' : '🚀 Create Account')}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const fetchLeads = async () => {
     try {
@@ -457,22 +589,17 @@ export default function App() {
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'sandbox' ? 'active' : ''}`} onClick={() => setActiveTab('sandbox')}>🎯 AI Sandbox</button>}
           {userRole === 'Admin' && <button className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>}
           
-          {/* RBAC Global Toggle */}
-          <div className="role-selector" style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '10px'}}>
-            <span style={{fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px'}}>👤 View As:</span>
-            <select 
-              value={userRole} 
-              onChange={(e) => {
-                setUserRole(e.target.value);
-                if (e.target.value === 'Agent' && activeTab !== 'crm') {
-                  setActiveTab('crm');
-                }
-              }}
-              style={{background: 'rgba(0,0,0,0.3)', color: userRole === 'Admin' ? '#f59e0b' : '#38bdf8', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold'}}
-            >
-              <option value="Admin">Admin</option>
-              <option value="Agent">BDR Agent</option>
-            </select>
+          <div style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px'}}>
+            {currentUser && (
+              <span style={{fontSize: '0.8rem', color: '#94a3b8', letterSpacing: '0.5px'}}>
+                👤 {currentUser.full_name || currentUser.email} {currentUser.org_name ? `(${currentUser.org_name})` : ''}
+              </span>
+            )}
+            <button onClick={handleLogout}
+              style={{background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px',
+                color: '#fca5a5', padding: '6px 14px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem'}}>
+              🚪 Logout
+            </button>
           </div>
         </div>
       </header>

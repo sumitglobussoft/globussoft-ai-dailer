@@ -1459,27 +1459,64 @@ class UserCreate(BaseModel):
     full_name: str
     role: str = "Agent"
 
-@app.post("/api/auth/register")
-def register_user(user: UserCreate):
-    existing = get_user_by_email(user.email)
+class OrgSignup(BaseModel):
+    org_name: str
+    full_name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/auth/signup")
+def signup(data: OrgSignup):
+    """Create organization + admin user in one step."""
+    existing = get_user_by_email(data.email)
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    hashed_password = get_password_hash(user.password)
-    user_id = create_user(user.email, hashed_password, user.full_name, user.role)
-    return {"status": "success", "id": user_id, "message": "User created effectively."}
+    # Create org first
+    org_id = create_organization(data.org_name)
+    # Create admin user linked to org
+    hashed = get_password_hash(data.password)
+    user_id = create_user(data.email, hashed, data.full_name, role="Admin", org_id=org_id)
+    # Auto-login: return token
+    token = create_access_token(data={"sub": data.email, "org_id": org_id}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    return {
+        "access_token": token, "token_type": "bearer",
+        "user": {"id": user_id, "email": data.email, "full_name": data.full_name, "role": "Admin", "org_id": org_id, "org_name": data.org_name}
+    }
 
 @app.post("/api/auth/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = get_user_by_email(form_data.username) # OAuth2 uses 'username', we map to email
-    if not user or not verify_password(form_data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Incorrect email or password", headers={"WWW-Authenticate": "Bearer"})
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user["email"]}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer", "role": user.get("role")}
+def login(data: LoginRequest):
+    user = get_user_by_email(data.email)
+    if not user or not verify_password(data.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    org_id = user.get("org_id")
+    org_name = ""
+    if org_id:
+        orgs = get_all_organizations()
+        org = next((o for o in orgs if o["id"] == org_id), None)
+        org_name = org["name"] if org else ""
+    token = create_access_token(data={"sub": user["email"], "org_id": org_id}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    return {
+        "access_token": token, "token_type": "bearer",
+        "user": {"id": user["id"], "email": user["email"], "full_name": user.get("full_name", ""), "role": user.get("role", "Admin"), "org_id": org_id, "org_name": org_name}
+    }
+
+@app.get("/api/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    org_id = current_user.get("org_id")
+    org_name = ""
+    if org_id:
+        orgs = get_all_organizations()
+        org = next((o for o in orgs if o["id"] == org_id), None)
+        org_name = org["name"] if org else ""
+    return {
+        "id": current_user["id"], "email": current_user["email"],
+        "full_name": current_user.get("full_name", ""), "role": current_user.get("role"),
+        "org_id": org_id, "org_name": org_name
+    }
 
 mobile_api = APIRouter(prefix="/api/mobile", tags=["Mobile Routes"])
 

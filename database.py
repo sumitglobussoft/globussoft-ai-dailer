@@ -119,11 +119,13 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            org_id INT,
             email VARCHAR(255) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
             full_name VARCHAR(255),
-            role VARCHAR(50) DEFAULT 'Agent',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            role VARCHAR(50) DEFAULT 'Admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE SET NULL
         )
     ''')
 
@@ -521,13 +523,13 @@ def update_crm_last_synced(provider: str, sync_time: str):
 
 # --- USERS & AUTH ---
 
-def create_user(email: str, password_hash: str, full_name: str, role: str = 'Agent') -> int:
+def create_user(email: str, password_hash: str, full_name: str, role: str = 'Admin', org_id: int = None) -> int:
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO users (email, password_hash, full_name, role)
-        VALUES (%s, %s, %s, %s)
-    ''', (email, password_hash, full_name, role))
+        INSERT INTO users (email, password_hash, full_name, role, org_id)
+        VALUES (%s, %s, %s, %s, %s)
+    ''', (email, password_hash, full_name, role, org_id))
     last_id = cursor.lastrowid
     conn.close()
     return last_id
