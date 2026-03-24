@@ -685,6 +685,7 @@ async def handle_media_stream(websocket: WebSocket):
     stream_sid = None
     is_exotel_stream = False
     chat_history = []
+    _llm_lock = asyncio.Lock()  # Turn guard: only one LLM call at a time
 
     dynamic_context = (
         f"Tum ek friendly human sales representative ho jiska naam Arjun hai, {lead_name} se phone par baat kar rahe ho. "
@@ -696,8 +697,10 @@ async def handle_media_stream(websocket: WebSocket):
         f"4. Jawab 1-2 chhote sentences mein do. Phone par log chhota bolte hain. "
         f"5. Ek baar mein ek hi qualifying question puchho. "
         f"6. Kabhi mat bolo ki tum AI ho. Tum Arjun ho. "
-        f"7. Greeting ya introduction kabhi repeat mat karo. "
-        f"8. Agar user pehle hello ya hi bole, toh uska greeting acknowledge karo — jaise 'Haan hello {lead_name} ji!' — aur phir naturally bolo ki aapne website pe enquiry ki thi, usi ke baare mein call kiya hai. Apna introduction chhota rakho."
+        f"7. KABHI BHI apne pichle jawab ko repeat mat karo. Agar user wahi sawaal dubara puchhe, toh samjho ki unhone pehla jawab sun liya hai — conversation aage badhaao. "
+        f"8. Agar user pehle hello ya hi bole, toh chhota sa acknowledge karo aur seedha topic pe aao. Jaise ek real person karta hai. "
+        f"9. IMPORTANT: Chat history mein dekho — agar tumne kuch pehle bol diya hai toh woh dubara mat bolo. Hamesha conversation ko AAGE le jaao, peeche nahi. "
+        f"10. Agar user baar baar same cheez puchhe, toh samjho unhe aur detail chahiye — naya information do, same line repeat mat karo."
     )
 
     global dg_client, llm_client
@@ -736,77 +739,84 @@ async def handle_media_stream(websocket: WebSocket):
                 import time as _time
                 t_start = _time.time()
 
-                if stream_sid:
-                    for monitor in monitor_connections.get(stream_sid, set()):
-                        try:
-                            await monitor.send_json({"type": "transcript", "role": "user", "text": sentence})
-                        except Exception:
-                            pass
+                # Turn guard: skip if another LLM call is already in flight
+                if _llm_lock.locked():
+                    import logging
+                    logging.getLogger("uvicorn.error").info(f"[TURN_GUARD] Skipping — LLM already processing. Transcript queued in history.")
+                    return
 
-                    if takeover_active.get(stream_sid, False):
-                        return  # Skip LLM generation if human took over
-
-                    pending = whisper_queues.get(stream_sid, [])
-                    if pending:
-                        for whisper in pending:
-                            chat_history.append({"role": "user", "parts": [{"text": f"Manager Whisper: {whisper}. Acknowledge this implicitly in your next response."}]})
-                        pending.clear()
-
-                # RAG Retrieval — skip if no knowledge base loaded
-                rag_context = ""
-                if knowledge_collection and knowledge_collection.count() > 0:
-                    try:
-                        import google.generativeai as gai
-                        gai.configure(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
-                        res = gai.embed_content(model="models/text-embedding-004", content=sentence, task_type="retrieval_query")
-                        query_emb = res['embedding']
-                        results = knowledge_collection.query(query_embeddings=[query_emb], n_results=2)
-                        if results and results.get('documents') and results['documents'][0]:
-                            docs = results['documents'][0]
-                            rag_context = "\n[KNOWLEDGE BASE RELEVANT INFO]:\n" + "\n---\n".join(docs)
-                    except Exception as e:
-                        print(f"RAG error: {e}")
-
-                t_pre_llm = _time.time()
-                final_system_instruction = dynamic_context + rag_context
-
-                try:
-                    import llm_provider
-                    response_text = await llm_provider.generate_response(
-                        chat_history=chat_history,
-                        system_instruction=final_system_instruction,
-                        max_tokens=150,
-                    )
-                    t_post_llm = _time.time()
-
-                    chat_history.append(
-                        {"role": "model", "parts": [{"text": response_text}]}
-                    )
-                    conv_logger.info(f"[LLM] AI RESPONSE: {response_text[:200]}")
-                    if stream_sid:
-                        call_logger.call_event(stream_sid, "LLM_RESPONSE", response_text[:100], llm_time_s=round(t_post_llm - t_pre_llm, 3))
-
+                async with _llm_lock:
                     if stream_sid:
                         for monitor in monitor_connections.get(stream_sid, set()):
                             try:
-                                await monitor.send_json({"type": "transcript", "role": "agent", "text": response_text})
+                                await monitor.send_json({"type": "transcript", "role": "user", "text": sentence})
                             except Exception:
                                 pass
-                except Exception as e:
-                    import traceback
-                    conv_logger.error(f"Error fetching LLM response: {e}")
-                    conv_logger.error(traceback.format_exc())
-                    return
 
-                if stream_sid:
-                    import re
-                    clean_text = re.sub(r'[\*\_\#\`\~\>\|]', '', response_text)
-                    clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)
-                    clean_text = clean_text.strip()
-                    conv_logger.info(f"TIMING: pre_llm={t_pre_llm - t_start:.2f}s, llm={t_post_llm - t_pre_llm:.2f}s, total_to_tts={_time.time() - t_start:.2f}s")
-                    active_tts_tasks[stream_sid] = asyncio.create_task(
-                        synthesize_and_send_audio(clean_text, stream_sid, websocket)
-                    )
+                        if takeover_active.get(stream_sid, False):
+                            return  # Skip LLM generation if human took over
+
+                        pending = whisper_queues.get(stream_sid, [])
+                        if pending:
+                            for whisper in pending:
+                                chat_history.append({"role": "user", "parts": [{"text": f"Manager Whisper: {whisper}. Acknowledge this implicitly in your next response."}]})
+                            pending.clear()
+
+                    # RAG Retrieval — skip if no knowledge base loaded
+                    rag_context = ""
+                    if knowledge_collection and knowledge_collection.count() > 0:
+                        try:
+                            import google.generativeai as gai
+                            gai.configure(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
+                            res = gai.embed_content(model="models/text-embedding-004", content=sentence, task_type="retrieval_query")
+                            query_emb = res['embedding']
+                            results = knowledge_collection.query(query_embeddings=[query_emb], n_results=2)
+                            if results and results.get('documents') and results['documents'][0]:
+                                docs = results['documents'][0]
+                                rag_context = "\n[KNOWLEDGE BASE RELEVANT INFO]:\n" + "\n---\n".join(docs)
+                        except Exception as e:
+                            print(f"RAG error: {e}")
+
+                    t_pre_llm = _time.time()
+                    final_system_instruction = dynamic_context + rag_context
+
+                    try:
+                        import llm_provider
+                        response_text = await llm_provider.generate_response(
+                            chat_history=chat_history,
+                            system_instruction=final_system_instruction,
+                            max_tokens=150,
+                        )
+                        t_post_llm = _time.time()
+
+                        chat_history.append(
+                            {"role": "model", "parts": [{"text": response_text}]}
+                        )
+                        conv_logger.info(f"[LLM] AI RESPONSE: {response_text[:200]}")
+                        if stream_sid:
+                            call_logger.call_event(stream_sid, "LLM_RESPONSE", response_text[:100], llm_time_s=round(t_post_llm - t_pre_llm, 3))
+
+                        if stream_sid:
+                            for monitor in monitor_connections.get(stream_sid, set()):
+                                try:
+                                    await monitor.send_json({"type": "transcript", "role": "agent", "text": response_text})
+                                except Exception:
+                                    pass
+                    except Exception as e:
+                        import traceback
+                        conv_logger.error(f"Error fetching LLM response: {e}")
+                        conv_logger.error(traceback.format_exc())
+                        return
+
+                    if stream_sid:
+                        import re
+                        clean_text = re.sub(r'[\*\_\#\`\~\>\|]', '', response_text)
+                        clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)
+                        clean_text = clean_text.strip()
+                        conv_logger.info(f"TIMING: pre_llm={t_pre_llm - t_start:.2f}s, llm={t_post_llm - t_pre_llm:.2f}s, total_to_tts={_time.time() - t_start:.2f}s")
+                        active_tts_tasks[stream_sid] = asyncio.create_task(
+                            synthesize_and_send_audio(clean_text, stream_sid, websocket)
+                        )
 
             asyncio.run_coroutine_threadsafe(_process_transcript(), loop)
 
