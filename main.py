@@ -507,8 +507,12 @@ async def dial_exotel(lead: dict):
     lead_interest = urllib.parse.quote(lead.get("interest", "our platform"))
     lead_phone = urllib.parse.quote(lead.get("phone_number", ""))
     exoml_url = f"http://my.exotel.com/exoml/start/{exotel_app_id}?name={lead_name}&interest={lead_interest}&phone={lead_phone}"
-    # Strip + prefix from phone - Exotel requires digits only
-    phone_clean = lead["phone_number"].lstrip("+")
+    # Normalize phone for Exotel: strip +, country code 91, ensure 10-digit Indian format
+    phone_clean = lead["phone_number"].strip().lstrip("+")
+    # Strip leading 91 country code if present (results in 10-digit number)
+    if len(phone_clean) == 12 and phone_clean.startswith("91"):
+        phone_clean = phone_clean[2:]
+    logger.info(f"Phone normalized: '{lead['phone_number']}' -> '{phone_clean}'")
     url = f"https://api.exotel.com/v1/Accounts/{EXOTEL_ACCOUNT_SID}/Calls/connect.json"
     data = {
         "From": phone_clean,
