@@ -135,6 +135,18 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS call_transcripts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT,
+            transcript JSON NOT NULL,
+            recording_url TEXT,
+            call_duration_s FLOAT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE SET NULL
+        )
+    ''')
     
     # Insert demo data
     cursor.execute("SELECT count(*) as cnt FROM sites")
@@ -545,3 +557,39 @@ def get_pronunciation_context() -> str:
     lines = [f"'{r['word']}' ko '{r['phonetic']}' bolna hai" for r in rows]
     return "\n[PRONUNCIATION GUIDE - in baat karo toh ye words aise bolo]: " + ", ".join(lines) + "."
 
+
+# ─── Call Transcripts ───
+
+def save_call_transcript(lead_id, transcript_json: str, recording_url: str = None, call_duration_s: float = 0):
+    """Save a complete call transcript for a lead."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO call_transcripts (lead_id, transcript, recording_url, call_duration_s) VALUES (%s, %s, %s, %s)",
+        (lead_id, transcript_json, recording_url, call_duration_s)
+    )
+    conn.close()
+    return cursor.lastrowid
+
+def get_transcripts_by_lead(lead_id: int):
+    """Get all call transcripts for a specific lead."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, lead_id, transcript, recording_url, call_duration_s, created_at FROM call_transcripts WHERE lead_id = %s ORDER BY created_at DESC",
+        (lead_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    import json
+    result = []
+    for r in rows:
+        t = r.copy()
+        # Parse transcript JSON string back to list
+        if isinstance(t['transcript'], str):
+            try:
+                t['transcript'] = json.loads(t['transcript'])
+            except Exception:
+                pass
+        result.append(t)
+    return result

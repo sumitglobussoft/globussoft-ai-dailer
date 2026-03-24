@@ -27,6 +27,7 @@ from database import update_lead_status, get_all_tasks, complete_task, get_repor
 from database import upload_document, get_documents_by_lead, get_analytics, search_leads, update_lead_note
 from database import get_active_crm_integrations, update_crm_last_synced, create_user, get_user_by_email
 from database import get_all_pronunciations, add_pronunciation, delete_pronunciation, get_pronunciation_context
+from database import save_call_transcript, get_transcripts_by_lead
 import importlib
 import inspect
 from crm_providers import BaseCRM
@@ -247,7 +248,8 @@ async def api_dial_lead(lead_id: int, background_tasks: BackgroundTasks):
         "name": lead["first_name"],
         "phone_number": lead["phone"],
         "interest": lead["source"],
-        "provider": DEFAULT_PROVIDER
+        "provider": DEFAULT_PROVIDER,
+        "lead_id": lead_id
     })
     return {"status": "success", "message": f"Dialing {lead['first_name']}..."}
 
@@ -345,6 +347,10 @@ def api_upload_document(lead_id: int, payload: DocumentCreate):
 @app.get("/api/leads/{lead_id}/documents")
 def api_get_documents(lead_id: int):
     return get_documents_by_lead(lead_id)
+
+@app.get("/api/leads/{lead_id}/transcripts")
+def api_get_transcripts(lead_id: int):
+    return get_transcripts_by_lead(lead_id)
 
 @app.get("/api/analytics")
 def api_get_analytics():
@@ -465,7 +471,8 @@ async def initiate_call(lead: dict):
     pending_call_info["latest"] = {
         "name": lead.get("name", "Customer"),
         "interest": lead.get("interest", "our platform"),
-        "phone": phone_clean
+        "phone": phone_clean,
+        "lead_id": lead.get("lead_id")
     }
     if provider == "twilio":
         await dial_twilio(lead)
@@ -699,11 +706,13 @@ async def handle_media_stream(websocket: WebSocket):
     lead_name = websocket.query_params.get("name", "") or ""
     interest = websocket.query_params.get("interest", "") or ""
     lead_phone = websocket.query_params.get("phone", "") or ""
+    _call_lead_id = None
     if not lead_name or lead_name == "Customer":
         info = pending_call_info.get("latest", {})
         lead_name = info.get("name", "Customer")
         interest = info.get("interest", "our platform") if not interest else interest
         lead_phone = info.get("phone", "") if not lead_phone else lead_phone
+        _call_lead_id = info.get("lead_id")
     stream_sid = None
     is_exotel_stream = False
     chat_history = []
@@ -1008,6 +1017,32 @@ async def handle_media_stream(websocket: WebSocket):
         if stream_sid:
             call_logger.call_event(stream_sid, "WS_DISCONNECTED", f"turns={len(chat_history)}")
             call_logger.end_call(stream_sid)
+            # Save transcript to DB for CRM review
+            if _call_lead_id and chat_history:
+                try:
+                    import json as _json
+                    import time as _t
+                    transcript_turns = []
+                    for msg in chat_history:
+                        role = "AI" if msg.get("role") == "model" else "User"
+                        text = ""
+                        parts = msg.get("parts", [])
+                        if parts and isinstance(parts[0], dict):
+                            text = parts[0].get("text", "")
+                        elif parts and isinstance(parts[0], str):
+                            text = parts[0]
+                        if text:
+                            transcript_turns.append({"role": role, "text": text})
+                    if transcript_turns:
+                        save_call_transcript(
+                            lead_id=_call_lead_id,
+                            transcript_json=_json.dumps(transcript_turns, ensure_ascii=False),
+                            recording_url=None,
+                            call_duration_s=round(_t.time() - _t.time(), 1)  # placeholder
+                        )
+                except Exception as _te:
+                    import logging as _tlog
+                    _tlog.getLogger("uvicorn.error").error(f"[TRANSCRIPT] Error saving: {_te}")
         if stream_sid and stream_sid in twilio_websockets:
             del twilio_websockets[stream_sid]
         try:
