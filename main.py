@@ -609,8 +609,8 @@ async def synthesize_and_send_audio(
     headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
     payload = {
         "text": text,
-        "model_id": "eleven_turbo_v2_5",
-        "voice_settings": {"stability": 0.3, "similarity_boost": 0.8},
+        "model_id": "eleven_flash_v2_5",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
     }
     tts_logger.info(f"TTS: is_exotel={is_exotel}, format={output_format}")
     try:
@@ -688,7 +688,7 @@ async def handle_media_stream(websocket: WebSocket):
 
     dynamic_context = (
         f"Tum ek friendly human sales representative ho jiska naam Arjun hai, {lead_name} se phone par baat kar rahe ho. "
-        f"Unhone {interest} mein interest dikhaya hai. Tumne unhe pehle hi greet kar diya hai. "
+        f"Unhone {interest} mein interest dikhaya hai. "
         f"TUMHARE RESPONSES KE LIYE CRITICAL RULES: "
         f"1. Hamesha natural Hindi mein baat karo, jaise ek real Indian person phone par baat karta hai. Thoda Hinglish bhi use karo. "
         f"2. Casual, warm language use karo jaise 'haan', 'bilkul', 'zaroor', 'achha'. "
@@ -696,7 +696,8 @@ async def handle_media_stream(websocket: WebSocket):
         f"4. Jawab 1-2 chhote sentences mein do. Phone par log chhota bolte hain. "
         f"5. Ek baar mein ek hi qualifying question puchho. "
         f"6. Kabhi mat bolo ki tum AI ho. Tum Arjun ho. "
-        f"7. Greeting ya introduction kabhi repeat mat karo."
+        f"7. Greeting ya introduction kabhi repeat mat karo. "
+        f"8. Agar user pehle hello ya hi bole, toh uska greeting acknowledge karo — jaise 'Haan hello {lead_name} ji!' — aur phir naturally bolo ki aapne website pe enquiry ki thi, usi ke baare mein call kiya hai. Apna introduction chhota rakho."
     )
 
     global dg_client, llm_client
@@ -863,7 +864,7 @@ async def handle_media_stream(websocket: WebSocket):
                     call_logger.call_event(stream_sid, "GREETING_SENT", f"to={lead_name}")
                     active_tts_tasks[stream_sid] = asyncio.create_task(
                         synthesize_and_send_audio(
-                            f"Namaste {lead_name} Ji, Kaise hai aap? Mai Adsgpt se bol ra hu, kya 2 min baat ho sakti hai, apne hamare site pe ek form fill up kiya tha",
+                            f"Hello {lead_name} ji! Kaise hain aap? Mai Arjun bol raha hu Adsgpt se. Aapne hamare site pe enquiry ki thi, bas 2 minute baat kar sakte hain?",
                             stream_sid,
                             websocket,
                         )
