@@ -725,7 +725,7 @@ async def handle_media_stream(websocket: WebSocket):
 
                 try:
                     response = await llm_client.aio.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-2.0-flash",
                         contents=chat_history,
                         config=types.GenerateContentConfig(
                             system_instruction=final_system_instruction
@@ -902,7 +902,7 @@ async def handle_media_stream(websocket: WebSocket):
                 transcript_text = "\n".join([f"{m['role']}: {m['parts'][0]['text']}" for m in chat_history if isinstance(m, dict) and 'parts' in m])
                 summary_prompt = "You are a sales evaluator. Analyze the transcript. Return strictly a valid JSON object with: {'sentiment': 'Cold/Warm/Hot', 'requires_brochure': true/false, 'note': 'short summary of next steps'}. If the lead asks for details, pricing, or a brochure, set requires_brochure to true."
                 res = await llm_client.aio.models.generate_content(
-                    model="gemini-2.5-flash", 
+                    model="gemini-2.0-flash", 
                     contents=transcript_text,
                     config=types.GenerateContentConfig(system_instruction=summary_prompt)
                 )
@@ -934,7 +934,7 @@ async def sandbox_stream(websocket: WebSocket):
             await websocket.send_json({"type": "transcript", "role": "user", "text": sentence})
             try:
                 response = await llm.aio.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-2.0-flash",
                     contents=chat_hist,
                     config=types.GenerateContentConfig(system_instruction="You are in AI sandbox test mode. A sales manager is interacting with you. Be extremely aggressive answering sales objections, keeping answers to one line.")
                 )
@@ -1062,7 +1062,7 @@ async def process_recording(recording_url: str, call_sid: str, phone: str):
             llm_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
             
         reply = await llm_client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=transcript,
             config=types.GenerateContentConfig(system_instruction=real_estate_prompt)
         )
