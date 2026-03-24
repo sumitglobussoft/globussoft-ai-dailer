@@ -28,6 +28,8 @@ from database import upload_document, get_documents_by_lead, get_analytics, sear
 from database import get_active_crm_integrations, update_crm_last_synced, create_user, get_user_by_email
 from database import get_all_pronunciations, add_pronunciation, delete_pronunciation, get_pronunciation_context
 from database import save_call_transcript, get_transcripts_by_lead
+from database import create_organization, get_all_organizations, delete_organization
+from database import create_product, get_products_by_org, update_product, delete_product, get_product_knowledge_context
 import importlib
 import inspect
 from crm_providers import BaseCRM
@@ -351,6 +353,113 @@ def api_get_documents(lead_id: int):
 @app.get("/api/leads/{lead_id}/transcripts")
 def api_get_transcripts(lead_id: int):
     return get_transcripts_by_lead(lead_id)
+
+# ─── Organizations & Products API ───
+
+@app.get("/api/organizations")
+def api_get_organizations():
+    return get_all_organizations()
+
+@app.post("/api/organizations")
+def api_create_organization(payload: dict):
+    org_id = create_organization(payload.get("name", ""))
+    return {"status": "ok", "id": org_id}
+
+@app.delete("/api/organizations/{org_id}")
+def api_delete_organization(org_id: int):
+    delete_organization(org_id)
+    return {"status": "ok"}
+
+@app.get("/api/organizations/{org_id}/products")
+def api_get_products(org_id: int):
+    return get_products_by_org(org_id)
+
+@app.post("/api/organizations/{org_id}/products")
+def api_create_product(org_id: int, payload: dict):
+    pid = create_product(org_id, payload.get("name", ""), payload.get("website_url", ""), payload.get("manual_notes", ""))
+    return {"status": "ok", "id": pid}
+
+@app.put("/api/products/{product_id}")
+def api_update_product(product_id: int, payload: dict):
+    update_product(product_id, **{k: v for k, v in payload.items() if k in ('name', 'website_url', 'scraped_info', 'manual_notes')})
+    return {"status": "ok"}
+
+@app.delete("/api/products/{product_id}")
+def api_delete_product_endpoint(product_id: int):
+    delete_product(product_id)
+    return {"status": "ok"}
+
+@app.post("/api/products/{product_id}/scrape")
+async def api_scrape_product_website(product_id: int):
+    """Fetch a product's website and use LLM to extract key info."""
+    from database import get_products_by_org as _gp
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    
+    # Get current product info
+    conn = __import__('database').get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM products WHERE id = %s", (product_id,))
+    product = cursor.fetchone()
+    conn.close()
+    
+    if not product or not product.get('website_url'):
+        return {"status": "error", "message": "Product not found or no website URL"}
+    
+    url = product['website_url'].strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+    
+    # Step 1: Fetch website HTML
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=15, follow_redirects=True)
+            html = resp.text[:15000]
+    except Exception as e:
+        logger.error(f"[SCRAPE] Failed to fetch {url}: {e}")
+        return {"status": "error", "message": f"Could not fetch website: {str(e)}"}
+    
+    # Step 2: Use LLM to extract product info
+    scrape_prompt = (
+        "You are a product analyst. Given this website HTML, extract the following in a concise format:\n"
+        "1. Company name\n"
+        "2. What the product/service does (2-3 sentences)\n"
+        "3. Key features (bullet points)\n"
+        "4. Target audience\n"
+        "5. Pricing (if visible)\n"
+        "6. Contact info\n\n"
+        "Be concise — max 500 words. Only include information that is clearly stated on the page.\n\n"
+        f"WEBSITE HTML:\n{html}"
+    )
+    
+    try:
+        groq_key = os.getenv("GROQ_API_KEY", "")
+        if groq_key:
+            async with httpx.AsyncClient() as client:
+                scrape_resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [{"role": "user", "content": scrape_prompt}],
+                        "max_tokens": 1000,
+                        "temperature": 0.3
+                    },
+                    timeout=30
+                )
+                scrape_data = scrape_resp.json()
+                scraped_info = scrape_data["choices"][0]["message"]["content"]
+        else:
+            scraped_info = "No LLM API key configured."
+    except Exception as e:
+        logger.error(f"[SCRAPE] LLM extraction failed: {e}")
+        scraped_info = f"LLM extraction failed: {str(e)}"
+    
+    # Step 3: Save to product
+    update_product(product_id, scraped_info=scraped_info)
+    
+    return {"status": "ok", "scraped_info": scraped_info}
+
 
 @app.get("/api/analytics")
 def api_get_analytics():
@@ -723,6 +832,9 @@ async def handle_media_stream(websocket: WebSocket):
     # Load pronunciation guide for TTS-correct product names
     pronunciation_ctx = get_pronunciation_context()
 
+    # Load product knowledge for system prompt
+    product_ctx = get_product_knowledge_context()
+
     dynamic_context = (
         f"Tum Arjun ho — ek friendly, professional lead qualifier. Tum {lead_name} ko call kar rahe ho. "
         f"Tumhare records mein hai ki unhone {interest} ke baare mein ek form bhara tha website par. "
@@ -749,6 +861,7 @@ async def handle_media_stream(websocket: WebSocket):
         f"9. NO REPETITION: Jo bol chuke ho dubara mat bolo. Conversation aage le jaao. "
         f"10. NATURAL FLOW: Agar user ne sirf 'achha' ya 'haan' bola toh features mat bolo — puchho 'toh aapko abhi bhi interest hai? Agar haan toh main ek appointment schedule kar deta hoon.'"
         f"{pronunciation_ctx}"
+        f"{product_ctx}"
     )
 
     global dg_client, llm_client

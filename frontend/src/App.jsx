@@ -72,6 +72,12 @@ export default function App() {
   const [transcriptLead, setTranscriptLead] = useState(null);
   const [transcripts, setTranscripts] = useState([]);
 
+  // Product Knowledge State
+  const [orgs, setOrgs] = useState([]);
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [orgProducts, setOrgProducts] = useState([]);
+  const [scraping, setScraping] = useState(null); // product_id being scraped
+
   const fetchLeads = async () => {
     try {
       const res = await fetch(`${API_URL}/leads`);
@@ -115,15 +121,24 @@ export default function App() {
     try { const res = await fetch(`${API_URL}/pronunciation`); setPronunciations(await res.json()); } catch(e){}
   };
 
+  const fetchOrgs = async () => {
+    try { const res = await fetch(`${API_URL}/organizations`); setOrgs(await res.json()); } catch(e){}
+  };
+
+  const fetchOrgProducts = async (orgId) => {
+    try { const res = await fetch(`${API_URL}/organizations/${orgId}/products`); setOrgProducts(await res.json()); } catch(e){}
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchSites();
     fetchTasks();
     fetchReports();
     fetchWhatsappLogs();
+    fetchLeads();
     fetchAnalytics();
-    fetchIntegrations();
     fetchPronunciations();
+    fetchOrgs();
   }, []);
 
   const handleStatusChange = async (leadId, newStatus) => {
@@ -367,6 +382,60 @@ export default function App() {
       const res = await fetch(`${API_URL}/leads/${lead.id}/transcripts`);
       setTranscripts(await res.json());
     } catch(e) { setTranscripts([]); }
+  };
+
+  const handleCreateOrg = async () => {
+    const name = prompt('Organization name:');
+    if (!name) return;
+    await fetch(`${API_URL}/organizations`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name }) });
+    fetchOrgs();
+  };
+
+  const handleDeleteOrg = async (orgId) => {
+    if (!confirm('Delete this organization and all its products?')) return;
+    await fetch(`${API_URL}/organizations/${orgId}`, { method: 'DELETE' });
+    if (selectedOrg?.id === orgId) { setSelectedOrg(null); setOrgProducts([]); }
+    fetchOrgs();
+  };
+
+  const handleSelectOrg = (org) => {
+    setSelectedOrg(org);
+    fetchOrgProducts(org.id);
+  };
+
+  const handleAddProduct = async () => {
+    if (!selectedOrg) return;
+    const name = prompt('Product name:');
+    if (!name) return;
+    await fetch(`${API_URL}/organizations/${selectedOrg.id}/products`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name })
+    });
+    fetchOrgProducts(selectedOrg.id);
+  };
+
+  const handleScrapeProduct = async (productId) => {
+    setScraping(productId);
+    try {
+      const res = await fetch(`${API_URL}/products/${productId}/scrape`, { method: 'POST' });
+      const data = await res.json();
+      if (data.scraped_info) fetchOrgProducts(selectedOrg.id);
+    } catch(e) { console.error(e); }
+    setScraping(null);
+  };
+
+  const handleSaveProduct = async (productId, updates) => {
+    await fetch(`${API_URL}/products/${productId}`, {
+      method: 'PUT', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(updates)
+    });
+    fetchOrgProducts(selectedOrg.id);
+  };
+
+  const handleDeleteProduct = async (productId) => {
+    if (!confirm('Delete this product?')) return;
+    await fetch(`${API_URL}/products/${productId}`, { method: 'DELETE' });
+    fetchOrgProducts(selectedOrg.id);
   };
 
   return (
@@ -938,6 +1007,95 @@ export default function App() {
               <strong style={{color: '#e2e8f0'}}>Example:</strong> If you add "Adsgpt" → "Ads G P T", the AI will say "Ads G P T" instead of trying to sound out "Adsgpt".
             </p>
           </div>
+
+          {/* Product Knowledge Section */}
+          <div className="wa-header" style={{borderBottom: '1px solid rgba(255,255,255,0.05)', margin: '2.5rem 0 1.5rem'}}>
+            <h3><span style={{color: '#22d3ee'}}>🌐 Product</span> Knowledge</h3>
+            <p>Manage your organizations and products. The AI learns from this to have informed conversations.</p>
+          </div>
+
+          <div className="glass-panel" style={{marginBottom: '2rem'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+              <h4 style={{marginTop: 0, marginBottom: 0, fontSize: '1.1rem', fontWeight: 600}}>🏛️ Organizations</h4>
+              <button className="btn-primary" style={{background: 'linear-gradient(135deg, #22d3ee, #06b6d4)', fontSize: '0.85rem', padding: '6px 14px'}}
+                onClick={handleCreateOrg}>+ New Organization</button>
+            </div>
+
+            {orgs.length === 0 ? (
+              <div style={{padding: '1.5rem', textAlign: 'center', color: '#64748b', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>No organizations yet. Create one to get started.</div>
+            ) : (
+              <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
+                {orgs.map(org => (
+                  <div key={org.id} style={{display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                    background: selectedOrg?.id === org.id ? 'rgba(34, 211, 238, 0.15)' : 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${selectedOrg?.id === org.id ? 'rgba(34, 211, 238, 0.3)' : 'rgba(255,255,255,0.1)'}`,
+                    color: selectedOrg?.id === org.id ? '#22d3ee' : '#e2e8f0'}}
+                    onClick={() => handleSelectOrg(org)}>
+                    <span style={{fontWeight: 600}}>{org.name}</span>
+                    <span style={{color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer'}} onClick={e => { e.stopPropagation(); handleDeleteOrg(org.id); }}>✕</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedOrg && (
+            <div className="glass-panel" style={{marginBottom: '2rem'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+                <h4 style={{marginTop: 0, marginBottom: 0, fontSize: '1.1rem', fontWeight: 600, color: '#22d3ee'}}>📦 Products in {selectedOrg.name}</h4>
+                <button className="btn-primary" style={{background: 'linear-gradient(135deg, #22d3ee, #06b6d4)', fontSize: '0.85rem', padding: '6px 14px'}}
+                  onClick={handleAddProduct}>+ Add Product</button>
+              </div>
+
+              {orgProducts.length === 0 ? (
+                <div style={{padding: '1.5rem', textAlign: 'center', color: '#64748b', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>No products yet. Add one to configure AI knowledge.</div>
+              ) : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
+                  {orgProducts.map(p => (
+                    <div key={p.id} style={{background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.05)'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+                        <span style={{fontWeight: 700, fontSize: '1.05rem', color: '#e2e8f0'}}>{p.name}</span>
+                        <button style={{background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.85rem'}}
+                          onClick={() => handleDeleteProduct(p.id)}>🗑️ Remove</button>
+                      </div>
+
+                      <div style={{display: 'flex', gap: '10px', marginBottom: '1rem', alignItems: 'flex-end'}}>
+                        <div className="form-group" style={{marginBottom: 0, flex: 1}}>
+                          <label>Website URL</label>
+                          <input className="form-input" placeholder="https://..." defaultValue={p.website_url}
+                            onBlur={e => handleSaveProduct(p.id, { website_url: e.target.value })} />
+                        </div>
+                        <button className="btn-primary" style={{height: '42px', padding: '0 16px', whiteSpace: 'nowrap',
+                          background: scraping === p.id ? '#475569' : 'linear-gradient(135deg, #06b6d4, #0891b2)', fontSize: '0.85rem'}}
+                          onClick={() => handleScrapeProduct(p.id)} disabled={scraping === p.id}>
+                          {scraping === p.id ? '⏳ Analyzing...' : '🔍 Scrape'}
+                        </button>
+                      </div>
+
+                      {p.scraped_info && (
+                        <div style={{marginBottom: '1rem'}}>
+                          <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, color: '#22d3ee', fontSize: '0.85rem'}}>📄 AI-Extracted Info</label>
+                          <div style={{background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px',
+                            border: '1px solid rgba(34, 211, 238, 0.15)', whiteSpace: 'pre-wrap',
+                            color: '#cbd5e1', fontSize: '0.85rem', lineHeight: 1.5, maxHeight: '200px', overflowY: 'auto'}}>
+                            {p.scraped_info}
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem'}}>📝 Manual Notes</label>
+                        <textarea className="form-input" rows={3} placeholder="Pricing, USPs, objection handling..."
+                          defaultValue={p.manual_notes}
+                          onBlur={e => handleSaveProduct(p.id, { manual_notes: e.target.value })}
+                          style={{resize: 'vertical', minHeight: '70px', fontSize: '0.85rem'}} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="glass-panel" style={{maxWidth: '500px', margin: '0 auto', textAlign: 'center', padding: '3rem 2rem'}}>

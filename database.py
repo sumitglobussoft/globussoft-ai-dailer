@@ -147,6 +147,27 @@ def init_db():
             FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE SET NULL
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS organizations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            org_id INT NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            website_url TEXT,
+            scraped_info LONGTEXT,
+            manual_notes LONGTEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+    ''')
     
     # Insert demo data
     cursor.execute("SELECT count(*) as cnt FROM sites")
@@ -593,3 +614,93 @@ def get_transcripts_by_lead(lead_id: int):
                 pass
         result.append(t)
     return result
+
+# ─── Organizations & Products ───
+
+def create_organization(name: str):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO organizations (name) VALUES (%s)", (name,))
+    org_id = cursor.lastrowid
+    conn.close()
+    return org_id
+
+def get_all_organizations():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM organizations ORDER BY id DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def delete_organization(org_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM organizations WHERE id = %s", (org_id,))
+    conn.close()
+    return True
+
+def create_product(org_id: int, name: str, website_url='', manual_notes=''):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO products (org_id, name, website_url, manual_notes) VALUES (%s, %s, %s, %s)",
+        (org_id, name, website_url, manual_notes)
+    )
+    pid = cursor.lastrowid
+    conn.close()
+    return pid
+
+def get_products_by_org(org_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM products WHERE org_id = %s ORDER BY id DESC", (org_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def update_product(product_id: int, **kwargs):
+    conn = get_conn()
+    cursor = conn.cursor()
+    parts, vals = [], []
+    for k in ('name', 'website_url', 'scraped_info', 'manual_notes'):
+        if k in kwargs and kwargs[k] is not None:
+            parts.append(f"{k} = %s"); vals.append(kwargs[k])
+    if parts:
+        vals.append(product_id)
+        cursor.execute(f"UPDATE products SET {', '.join(parts)} WHERE id = %s", vals)
+    conn.close()
+    return True
+
+def delete_product(product_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM products WHERE id = %s", (product_id,))
+    conn.close()
+    return True
+
+def get_all_products():
+    """Get all products across all organizations for system prompt."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT p.*, o.name as org_name FROM products p JOIN organizations o ON p.org_id = o.id ORDER BY o.name, p.name"
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_product_knowledge_context() -> str:
+    """Build product knowledge string for injecting into LLM system prompt."""
+    products = get_all_products()
+    if not products:
+        return ""
+    parts = []
+    for p in products:
+        info = f"Product: {p['name']} (by {p['org_name']})"
+        if p.get('scraped_info'):
+            info += f" — {p['scraped_info']}"
+        if p.get('manual_notes'):
+            info += f" | Admin notes: {p['manual_notes']}"
+        parts.append(info)
+    return "\n\n[PRODUCT KNOWLEDGE - Yeh information use karo jab user product ke baare mein puchhe]:\n" + "\n".join(parts)
