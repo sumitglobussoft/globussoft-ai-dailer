@@ -490,10 +490,15 @@ async def dial_twilio(lead: dict):
     except Exception as e:
         print(f"Failed to trigger Twilio call: {e}")
 
+# Debug: store last Exotel dial result for remote inspection
+last_dial_result = {}
+
 async def dial_exotel(lead: dict):
     import logging
     import urllib.parse
     import base64 as _b64
+    from datetime import datetime
+    global last_dial_result
     logger = logging.getLogger("uvicorn.error")
     # Use the Exotel Landing Flow App which has the Voicebot applet
     # configured to connect to our wss://test.callified.ai/media-stream
@@ -512,6 +517,7 @@ async def dial_exotel(lead: dict):
         "CallType": "trans",
     }
     logger.info(f"Exotel dial attempt: From={phone_clean}, ExoML={exoml_url}")
+    last_dial_result = {"timestamp": datetime.now().isoformat(), "phone": phone_clean, "url": url, "exoml": exoml_url, "status": "pending"}
     try:
         # Build Basic auth header exactly as Exotel confirmed working
         creds = f"{EXOTEL_API_KEY}:{EXOTEL_API_TOKEN}"
@@ -523,10 +529,16 @@ async def dial_exotel(lead: dict):
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(url, data=data, headers=headers)
         logger.info(f"Exotel Call Response ({resp.status_code}): {resp.text[:300]}")
+        last_dial_result.update({"status": resp.status_code, "response": resp.text[:500]})
         if resp.status_code != 200:
             logger.error(f"Exotel API error {resp.status_code}: {resp.text[:500]}")
     except Exception as e:
         logger.error(f"Failed to trigger Exotel call: {e}")
+        last_dial_result.update({"status": "error", "error": str(e)})
+
+@app.get("/api/debug/last-dial")
+def debug_last_dial():
+    return last_dial_result
 
 
 
