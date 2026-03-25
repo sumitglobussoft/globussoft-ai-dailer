@@ -905,7 +905,7 @@ async def synthesize_and_send_audio(
                             else:
                                 await websocket.send_text(json.dumps({
                                     "event": "media",
-                                    "stream_sid": stream_sid,
+                                    "streamSid": stream_sid,
                                     "media": {"payload": base64.b64encode(chunk).decode('utf-8')}
                                 }))
                                 chunk_count += 1
