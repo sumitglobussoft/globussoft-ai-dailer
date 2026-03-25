@@ -8,7 +8,8 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks, Request, Body, Header, HTTPException, WebSocket, APIRouter, Depends, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 import jwt
 from typing import Optional
@@ -1559,3 +1560,20 @@ def mobile_complete_task(task_id: int, current_user: dict = Depends(get_current_
     return {"status": "success"}
 
 app.include_router(mobile_api)
+
+# --- STATIC FILE SERVING (SPA) ---
+_dist_dir = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+_assets_dir = os.path.join(_dist_dir, "assets")
+if os.path.isdir(_assets_dir):
+    app.mount("/assets", StaticFiles(directory=_assets_dir), name="static-assets")
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """Catch-all: serve frontend dist files or fall back to index.html for SPA routing."""
+    file_path = os.path.join(_dist_dir, full_path)
+    if full_path and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    index = os.path.join(_dist_dir, "index.html")
+    if os.path.isfile(index):
+        return FileResponse(index)
+    return JSONResponse({"detail": "Frontend not built"}, status_code=404)
