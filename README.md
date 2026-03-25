@@ -150,8 +150,17 @@ EXOTEL_CALLER_ID=your_exotel_caller_id
 # --- AI SERVICES ---
 DEEPGRAM_API_KEY=your_deepgram_api_key
 GEMINI_API_KEY=your_gemini_api_key
+
+# TTS Provider Configuration ('elevenlabs' or 'smallest')
+TTS_PROVIDER=smallest
+
+# ElevenLabs Configuration (If TTS_PROVIDER=elevenlabs)
 ELEVENLABS_API_KEY=your_elevenlabs_api_key
 ELEVENLABS_VOICE_ID=your_elevenlabs_voice_id
+
+# Smallest AI Configuration (If TTS_PROVIDER=smallest)
+SMALLEST_API_KEY=your_smallest_api_key
+SMALLEST_VOICE_ID=lucy
 
 # --- NETWORKING ---
 # This is your Ngrok public URL that Twilio/Exotel will securely ping.

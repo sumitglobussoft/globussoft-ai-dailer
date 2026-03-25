@@ -805,80 +805,115 @@ async def synthesize_and_send_audio(
 ):
     import logging
     import struct
+    import audioop
     tts_logger = logging.getLogger("uvicorn.error")
     tts_logger.info(f"TTS START: text='{text[:60]}...', sid={stream_sid}")
     is_exotel = not stream_sid.startswith("SM")
-    # Exotel uses L16 (linear16 PCM) at 8kHz; Twilio uses mulaw 8kHz
-    if is_exotel:
-        output_format = "pcm_16000"  # Get 16kHz PCM, we'll downsample to 8kHz
+    
+    tts_provider = os.getenv("TTS_PROVIDER", "elevenlabs").lower()
+    
+    if tts_provider == "smallest":
+        # Smallest AI Lightning V3 TTS
+        url = "https://waves-api.smallest.ai/api/v1/lightning/get_speech"
+        headers = {
+            "Authorization": f"Bearer {os.getenv('SMALLEST_API_KEY')}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": text,
+            "voice_id": os.getenv("SMALLEST_VOICE_ID", "emily"),
+            "sample_rate": 8000,
+            "add_wav_header": False,
+            "speed": 1.0
+        }
+        tts_logger.info(f"TTS: provider=SmallestAI, is_exotel={is_exotel}")
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code != 200:
+                        body = await response.aread()
+                        tts_logger.error(f"TTS SmallestAI error: {body[:200]}")
+                        return
+                    chunk_count = 0
+                    async for chunk in response.aiter_bytes(chunk_size=1024):
+                        if chunk:
+                            if is_exotel:
+                                # Exotel natively wants raw 8kHz Linear PCM (16-bit)
+                                b64_chunk = base64.b64encode(chunk).decode('utf-8')
+                            else:
+                                # Twilio wants 8kHz u-law
+                                ulaw_chunk = audioop.lin2ulaw(chunk, 2)
+                                b64_chunk = base64.b64encode(ulaw_chunk).decode('utf-8')
+                                
+                            await websocket.send_text(json.dumps({
+                                "event": "media",
+                                "stream_sid": stream_sid,
+                                "media": {"payload": b64_chunk}
+                            }))
+                            chunk_count += 1
+                    tts_logger.info(f"TTS SmallestAI END: sent {chunk_count} chunks.")
+        except Exception as e:
+            tts_logger.error(f"TTS SmallestAI Exception: {e}")
+            
     else:
-        output_format = "ulaw_8000"
-    url = (
-        f"https://api.elevenlabs.io/v1/text-to-speech/"
-        f"{os.getenv('ELEVENLABS_VOICE_ID')}/stream?output_format={output_format}&optimize_streaming_latency=3"
-    )
-    headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
-    payload = {
-        "text": text,
-        "model_id": "eleven_flash_v2_5",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-    }
-    tts_logger.info(f"TTS: is_exotel={is_exotel}, format={output_format}")
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream(
-                "POST", url, json=payload, headers=headers
-            ) as response:
-                tts_logger.info(f"TTS ElevenLabs response status: {response.status_code}")
-                if response.status_code != 200:
-                    body = await response.aread()
-                    tts_logger.error(f"TTS ElevenLabs error: {body[:200]}")
-                    return
-                chunk_count = 0
-                pcm_buffer = b""
-                async for chunk in response.aiter_bytes(chunk_size=640):
-                    if chunk:
-                        if is_exotel:
-                            # Downsample 16kHz to 8kHz: take every other 16-bit sample
-                            pcm_buffer += chunk
-                            # Process in multiples of 4 bytes (2 samples of 2 bytes each)
-                            usable = len(pcm_buffer) - (len(pcm_buffer) % 4)
-                            if usable >= 320:
-                                raw = pcm_buffer[:usable]
-                                pcm_buffer = pcm_buffer[usable:]
-                                # Take every other 16-bit sample (downsample 2:1)
-                                downsampled = b""
-                                for i in range(0, len(raw), 4):
-                                    downsampled += raw[i:i+2]
-                                b64_chunk = base64.b64encode(downsampled).decode('utf-8')
+        # ElevenLabs TTS Fallback/Default
+        if is_exotel:
+            output_format = "pcm_16000"  # Downsampled to 8kHz inline
+        else:
+            output_format = "ulaw_8000"
+            
+        url = (
+            f"https://api.elevenlabs.io/v1/text-to-speech/"
+            f"{os.getenv('ELEVENLABS_VOICE_ID')}/stream?output_format={output_format}&optimize_streaming_latency=3"
+        )
+        headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
+        payload = {
+            "text": text,
+            "model_id": "eleven_flash_v2_5",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+        }
+        tts_logger.info(f"TTS: provider=ElevenLabs, is_exotel={is_exotel}, format={output_format}")
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream(
+                    "POST", url, json=payload, headers=headers
+                ) as response:
+                    if response.status_code != 200:
+                        body = await response.aread()
+                        tts_logger.error(f"TTS ElevenLabs error: {body[:200]}")
+                        return
+                    chunk_count = 0
+                    pcm_buffer = b""
+                    async for chunk in response.aiter_bytes(chunk_size=640):
+                        if chunk:
+                            if is_exotel:
+                                # Downsample 16kHz to 8kHz for ElevenLabs PCM Exotel output
+                                pcm_buffer += chunk
+                                usable = len(pcm_buffer) - (len(pcm_buffer) % 4)
+                                if usable >= 320:
+                                    raw = pcm_buffer[:usable]
+                                    pcm_buffer = pcm_buffer[usable:]
+                                    downsampled = b"".join(raw[i:i+2] for i in range(0, len(raw), 4))
+                                    b64_chunk = base64.b64encode(downsampled).decode('utf-8')
+                                    await websocket.send_text(json.dumps({
+                                        "event": "media",
+                                        "stream_sid": stream_sid,
+                                        "media": {"payload": b64_chunk}
+                                    }))
+                                    chunk_count += 1
+                            else:
                                 await websocket.send_text(json.dumps({
                                     "event": "media",
                                     "stream_sid": stream_sid,
-                                    "media": {"payload": b64_chunk}
+                                    "media": {"payload": base64.b64encode(chunk).decode('utf-8')}
                                 }))
                                 chunk_count += 1
-                        else:
-                            # Twilio: send JSON-wrapped base64 mulaw audio
-                            chunk_count += 1
-                            await websocket.send_text(
-                                json.dumps(
-                                    {
-                                        "event": "media",
-                                        "streamSid": stream_sid,
-                                        "media": {
-                                            "payload": base64.b64encode(chunk).decode(
-                                                "utf-8"
-                                            )
-                                        },
-                                    }
-                                )
-                            )
-                tts_logger.info(f"TTS DONE: sent {chunk_count} audio chunks to stream {stream_sid}")
-    except asyncio.CancelledError:
-        tts_logger.info("TTS cancelled (barge-in)")
-    except Exception as e:
-        tts_logger.error(f"TTS ERROR: {e}")
-
+                    tts_logger.info(f"TTS ElevenLabs END: sent {chunk_count} chunks.")
+        except asyncio.CancelledError:
+            tts_logger.info("TTS ElevenLabs cancelled (barge-in)")
+        except Exception as e:
+            tts_logger.error(f"TTS ElevenLabs Exception: {e}")
 
 @app.websocket("/media-stream")
 async def handle_media_stream(websocket: WebSocket):
