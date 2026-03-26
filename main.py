@@ -362,13 +362,14 @@ async def process_recording(recording_url: str, call_sid: str, phone: str):
                 UPDATE call_transcripts 
                 SET recording_url = %s, updated_at = CURRENT_TIMESTAMP
                 WHERE id = (
-                    SELECT id FROM (
-                        SELECT id FROM call_transcripts 
-                        WHERE lead_phone = %s 
-                        ORDER BY created_at DESC LIMIT 1
+                    SELECT t.id FROM (
+                        SELECT ct.id FROM call_transcripts ct
+                        JOIN leads l ON ct.lead_id = l.id
+                        WHERE l.phone LIKE %s
+                        ORDER BY ct.created_at DESC LIMIT 1
                     ) as t
                 )
-            ''', (public_audio_url, phone))
+            ''', (public_audio_url, f"%{phone[-10:]}%" if len(phone) >= 10 else f"%{phone}%"))
             conn.commit()
             log.error(f"[WEBHOOK DB SYNC] Attached {public_audio_url} to phone {phone}")
             
