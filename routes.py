@@ -73,6 +73,18 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 
 api_router = APIRouter()
 
+@api_router.get("/api/debug/logs")
+def api_fetch_logs():
+    try:
+        if os.path.exists("call_events.log"):
+            with open("call_events.log", "r", encoding="utf-8") as f:
+                content = f.read()
+                return {"logs": content[-30000:] if len(content) > 30000 else content}
+        else:
+            return {"error": "call_events.log not found on disk."}
+    except Exception as e:
+        return {"error": str(e)}
+
 # --- Leads ---
 
 @api_router.get("/api/leads")
