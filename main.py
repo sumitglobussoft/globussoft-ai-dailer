@@ -276,6 +276,8 @@ async def twilio_status_webhook(request: Request):
 
 @app.post("/webhook/exotel/status")
 async def exotel_status_webhook(request: Request, background_tasks: BackgroundTasks):
+    import logging
+    log = logging.getLogger("uvicorn.error")
     try:
         form = dict(await request.form())
     except Exception:
@@ -284,7 +286,7 @@ async def exotel_status_webhook(request: Request, background_tasks: BackgroundTa
         except Exception:
             form = {}
             
-    print(f"[RAW EXOTEL STATUS] {form}")
+    log.error(f"[RAW EXOTEL STATUS] {form}")
     status = form.get("Status", form.get("CallStatus", ""))
     detailed_status = form.get("DetailedStatus", "")
     phone = form.get("To", "")
@@ -301,7 +303,7 @@ async def exotel_status_webhook(request: Request, background_tasks: BackgroundTa
         log_call_status(phone, terminal_error, "Exotel Call Error")
         
     if recording_url and call_sid:
-        print(f"[EXOTEL-WEBHOOK] Status payload contained a RecordingUrl for {call_sid}!")
+        log.error(f"[EXOTEL-WEBHOOK] Status payload contained a RecordingUrl for {call_sid}!")
         background_tasks.add_task(process_recording, recording_url, call_sid, phone)
         
     return {"status": "ok"}
@@ -332,9 +334,11 @@ async def handle_exotel_recording(request: Request, background_tasks: Background
 async def process_recording(recording_url: str, call_sid: str, phone: str):
     import os
     import time
+    import logging
     from database import get_connection
+    log = logging.getLogger("uvicorn.error")
 
-    print(f"Downloading recording for {call_sid}...")
+    log.error(f"Downloading recording for {call_sid} from {recording_url}")
     async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
         try:
             # Exotel recordings typically don't require API auth on direct links, but follow redirects
@@ -342,14 +346,14 @@ async def process_recording(recording_url: str, call_sid: str, phone: str):
             audio_bytes = resp.content
             
             # Save file physically
-            os.makedirs("recordings", exist_ok=True)
+            os.makedirs("/home/empcloud-development/callified-ai/recordings", exist_ok=True)
             mp3_filename = f"call_{call_sid}_{int(time.time() * 1000)}.mp3"
-            mp3_path = os.path.join("recordings", mp3_filename)
+            mp3_path = os.path.join("/home/empcloud-development/callified-ai/recordings", mp3_filename)
             with open(mp3_path, "wb") as f:
                 f.write(audio_bytes)
                 
             public_audio_url = f"{PUBLIC_URL}/api/recordings/{mp3_filename}"
-            print(f"[WEBHOOK SAVED] Successfully wrote {len(audio_bytes)} bytes to {mp3_path}")
+            log.error(f"[WEBHOOK SAVED] Successfully wrote {len(audio_bytes)} bytes to {mp3_path}")
             
             # Update Database!
             conn = get_connection()
@@ -366,12 +370,12 @@ async def process_recording(recording_url: str, call_sid: str, phone: str):
                 )
             ''', (public_audio_url, phone))
             conn.commit()
-            cursor.close()
-            conn.close()
-            print(f"[WEBHOOK DB SYNC] Attached {public_audio_url} to phone {phone}")
+            log.error(f"[WEBHOOK DB SYNC] Attached {public_audio_url} to phone {phone}")
             
         except Exception as e:
-            print("Failed to download recording:", e)
+            log.error(f"Failed to download recording: {e}")
+            import traceback
+            log.error(traceback.format_exc())
             return
             
     try:
