@@ -98,7 +98,7 @@ async def handle_media_stream(websocket: WebSocket):
     chat_history = []
     _llm_lock = asyncio.Lock()
     _last_transcript_time = [0.0]
-    _debounce_delay = 0.4
+    _debounce_delay = 0.05
     _recording_mic_chunks = []
     _recording_tts_chunks = []
 
@@ -239,48 +239,106 @@ async def handle_media_stream(websocket: WebSocket):
                         t_pre_llm = time.time()
                         final_system_instruction = dynamic_context + rag_context
 
+                        # Start TTS Worker Queue for Streaming Pipeline
+                        tts_queue = asyncio.Queue()
+                        
+                        async def tts_worker():
+                            try:
+                                while True:
+                                    sentence = await tts_queue.get()
+                                    if sentence is None:
+                                        break
+                                    await synthesize_and_send_audio(
+                                        text=sentence, 
+                                        stream_sid=stream_sid, 
+                                        websocket=websocket, 
+                                        tts_provider_override=_tts_provider_override, 
+                                        tts_voice_override=_tts_voice_override, 
+                                        tts_language_override=_tts_language_override
+                                    )
+                                    tts_queue.task_done()
+                            except asyncio.CancelledError:
+                                pass
+                            except Exception as e:
+                                conv_logger.error(f"TTS Worker Error: {e}")
+
+                        if stream_sid in active_tts_tasks and not active_tts_tasks[stream_sid].done():
+                            active_tts_tasks[stream_sid].cancel()
+                            try:
+                                await active_tts_tasks[stream_sid]
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                                
+                        worker_task = asyncio.create_task(tts_worker())
+                        if stream_sid:
+                            active_tts_tasks[stream_sid] = worker_task
+
                         try:
                             import llm_provider
-                            response_text = await llm_provider.generate_response(
+                            import re
+                            
+                            sentence_separators = re.compile(r'([.!?|\n]+)')
+                            full_response = ""
+                            current_sentence = ""
+                            first_token_time = None
+                            
+                            async for chunk in llm_provider.generate_response_stream(
                                 chat_history=chat_history,
                                 system_instruction=final_system_instruction,
                                 max_tokens=150,
-                            )
+                            ):
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                    conv_logger.info(f"TIMING: TTFB LLM = {first_token_time - t_pre_llm:.2f}s")
+                                    
+                                full_response += chunk
+                                current_sentence += chunk
+                                
+                                parts = sentence_separators.split(current_sentence)
+                                if len(parts) > 1:
+                                    complete_text = "".join(parts[:-1]).strip()
+                                    remaining_text = parts[-1]
+                                    
+                                    if complete_text:
+                                        clean_text = re.sub(r'[\*\_\#\`\~\>\|]', '', complete_text)
+                                        clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)
+                                        clean_text = clean_text.strip()
+                                        if clean_text:
+                                            await tts_queue.put(clean_text)
+                                            
+                                    current_sentence = remaining_text
+                            
+                            if current_sentence.strip():
+                                clean_text = re.sub(r'[\*\_\#\`\~\>\|]', '', current_sentence.strip())
+                                clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)
+                                clean_text = clean_text.strip()
+                                if clean_text:
+                                    await tts_queue.put(clean_text)
+                                    
+                            await tts_queue.put(None)
+
                             t_post_llm = time.time()
-                            chat_history.append({"role": "model", "parts": [{"text": response_text}]})
-                            conv_logger.info(f"[LLM] AI RESPONSE: {response_text[:200]}")
+                            chat_history.append({"role": "model", "parts": [{"text": full_response}]})
+                            conv_logger.info(f"[LLM] AI STREAM RESPONSE FULL: {full_response[:200]}")
+                            conv_logger.info(f"TIMING: pre_llm={t_pre_llm - t_start:.2f}s, first_token={first_token_time - t_pre_llm if first_token_time else 0:.2f}s, total_gen={t_post_llm - t_pre_llm:.2f}s")
+                            
                             try:
-                                await websocket.send_json({"event": "llm_response", "text": response_text})
+                                await websocket.send_json({"event": "llm_response", "text": full_response})
                             except Exception:
                                 pass
                             if stream_sid:
-                                call_logger.call_event(stream_sid, "LLM_RESPONSE", response_text[:100], llm_time_s=round(t_post_llm - t_pre_llm, 3))
+                                call_logger.call_event(stream_sid, "LLM_RESPONSE", full_response[:100], llm_time_s=round(t_post_llm - t_pre_llm, 3))
                                 for monitor in monitor_connections.get(stream_sid, set()):
                                     try:
-                                        await monitor.send_json({"type": "transcript", "role": "agent", "text": response_text})
+                                        await monitor.send_json({"type": "transcript", "role": "agent", "text": full_response})
                                     except Exception:
                                         pass
                         except Exception as e:
                             import traceback
-                            conv_logger.error(f"Error fetching LLM response: {e}")
+                            conv_logger.error(f"Error streaming LLM response: {e}")
                             conv_logger.error(traceback.format_exc())
+                            await tts_queue.put(None)
                             return
-
-                        if stream_sid:
-                            import re
-                            clean_text = re.sub(r'[\*\_\#\`\~\>\|]', '', response_text)
-                            clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)
-                            clean_text = clean_text.strip()
-                            conv_logger.info(f"TIMING: pre_llm={t_pre_llm - t_start:.2f}s, llm={t_post_llm - t_pre_llm:.2f}s, total_to_tts={time.time() - t_start:.2f}s")
-                            if stream_sid in active_tts_tasks and not active_tts_tasks[stream_sid].done():
-                                active_tts_tasks[stream_sid].cancel()
-                                try:
-                                    await active_tts_tasks[stream_sid]
-                                except (asyncio.CancelledError, Exception):
-                                    pass
-                            active_tts_tasks[stream_sid] = asyncio.create_task(
-                                synthesize_and_send_audio(clean_text, stream_sid, websocket, _tts_provider_override, _tts_voice_override, _tts_language_override)
-                            )
                 except Exception as _crash:
                     import traceback
                     logging.getLogger("uvicorn.error").error(f"[SYSTEM FATAL] _process_transcript SILENT CRASH: {_crash}")
@@ -299,9 +357,6 @@ async def handle_media_stream(websocket: WebSocket):
             sample_rate=8000,
             channels=1,
             endpointing=300,
-            interim_results=True,
-            utterance_end_ms=1000,
-            vad_events=True,
         )
     )
 
