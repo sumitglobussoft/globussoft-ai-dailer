@@ -557,7 +557,8 @@ async def handle_media_stream(websocket: WebSocket):
                                         if not remote_url:
                                             ws_logger.info(f"[RECORDING] Missing URL initially, waiting 10s for Exotel transcoding...")
                                             await asyncio.sleep(10)
-                                            rec_resp2 = await _hc.get(rec_api_url, headers={"Authorization": f"Basic {auth_b64}"})
+                                            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc_retry:
+                                                rec_resp2 = await _hc_retry.get(rec_api_url, headers={"Authorization": f"Basic {auth_b64}"})
                                             if rec_resp2.status_code == 200:
                                                 rec_data2 = rec_resp2.json()
                                                 call_obj2 = rec_data2.get("Call", {})
