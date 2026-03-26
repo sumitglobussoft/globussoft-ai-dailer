@@ -1,0 +1,29 @@
+import paramiko
+import os
+
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+with open(env_path) as f:
+    for line in f:
+        if "=" in line and not line.startswith("#"):
+            k, v = line.strip().split("=", 1)
+            os.environ[k] = v
+
+HOSTNAME = os.environ.get("DEPLOY_HOST", "163.227.174.141")
+USERNAME = os.environ.get("DEPLOY_USER", "empcloud-development")
+PASSWORD = os.environ.get("DEPLOY_PASS")
+
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect(HOSTNAME, username=USERNAME, password=PASSWORD)
+
+def exec_sudo(cmd):
+    stdin, stdout, stderr = ssh.exec_command(f"sudo -S {cmd}")
+    stdin.write(PASSWORD + '\n')
+    stdin.flush()
+    print(stdout.read().decode())
+    print(stderr.read().decode())
+
+exec_sudo("systemctl status demo-callified-ai.service --no-pager")
+exec_sudo("journalctl -u demo-callified-ai.service -n 50 --no-pager")
+
+ssh.close()

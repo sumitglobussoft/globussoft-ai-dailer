@@ -20,3 +20,5 @@ chromadb
 pymupdf
 numpy
 groq
+faiss-cpu
+sentence-transformers

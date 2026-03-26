@@ -27,7 +27,9 @@ from database import (
     get_org_custom_prompt, save_org_custom_prompt,
     get_org_voice_settings, save_org_voice_settings,
     save_crm_integration,
+    log_knowledge_file, update_knowledge_file_status, get_knowledge_files, delete_knowledge_file
 )
+import rag
 
 # ─── Pydantic Models ────────────────────────────────────────────────────────
 
@@ -53,17 +55,7 @@ class DocumentCreate(BaseModel):
     file_name: str
     file_url: str
 
-# ─── ChromaDB / RAG (optional) ──────────────────────────────────────────────
-
-try:
-    import chromadb
-    import fitz
-    chroma_client = chromadb.PersistentClient(path="./chroma_db")
-    knowledge_collection = chroma_client.get_or_create_collection(name="bdrpl_knowledge")
-except ImportError:
-    chroma_client = None
-    knowledge_collection = None
-    fitz = None
+# ─── Removed Legacy ChromaDB (Using FAISS instead) ─────────
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -455,46 +447,62 @@ async def create_integration(data: dict, current_user: dict = Depends(get_curren
 
 # --- Knowledge / RAG ---
 
+def process_uploaded_pdf(filepath: str, org_id: int, filename: str, file_id: int):
+    import logging
+    _log = logging.getLogger("uvicorn.error")
+    try:
+        chunks_added = rag.ingest_pdf(filepath, org_id, filename)
+        update_knowledge_file_status(file_id, "Active", chunks_added)
+        _log.info(f"RAG INGESTION SUCCESS: {filename} mapped to {chunks_added} FAISS chunks.")
+    except Exception as e:
+        _log.error(f"RAG INGESTION FAILED: {filename} - {e}")
+        update_knowledge_file_status(file_id, "Failed", 0)
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
 @api_router.post("/api/knowledge/upload")
-async def upload_knowledge(file: UploadFile = File(...)):
-    if not knowledge_collection or not fitz:
-        raise HTTPException(status_code=500, detail="RAG dependencies (chromadb, PyMuPDF) not installed.")
+async def upload_knowledge(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...), 
+    current_user: dict = Depends(get_current_user)
+):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDFs are supported.")
-    content = await file.read()
-    doc = fitz.open("pdf", content)
-    text = ""
-    for page in doc:
-        text += page.get_text() + "\n"
-    chunks = [c.strip() for c in text.split('\n\n') if len(c.strip()) > 50]
-    if not chunks:
-        return {"status": "error", "message": "No text found in PDF"}
-    documents, metadatas, ids, embeddings = [], [], [], []
-    import google.generativeai as gai
-    gai.configure(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
-    for i, chunk in enumerate(chunks):
-        try:
-            res = gai.embed_content(model="models/text-embedding-004", content=chunk, task_type="retrieval_document")
-            embeddings.append(res['embedding'])
-            documents.append(chunk)
-            metadatas.append({"source": file.filename, "chunk": i})
-            ids.append(f"{file.filename}_{i}")
-        except Exception as e:
-            print(f"Embedding error: {e}")
-    if documents:
-        knowledge_collection.add(embeddings=embeddings, documents=documents, metadatas=metadatas, ids=ids)
-    return {"status": "success", "chunks_added": len(documents), "filename": file.filename}
+        
+    org_id = current_user.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="No organization linked")
+
+    # Save temp file
+    temp_dir = os.path.join(os.path.dirname(__file__), "temp_uploads")
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"{org_id}_{file.filename}")
+    
+    contents = await file.read()
+    with open(temp_path, "wb") as f:
+        f.write(contents)
+        
+    # Log to DB instantly
+    file_id = log_knowledge_file(org_id, file.filename, "Processing", 0)
+    
+    # Process purely in background using FAISS/ML arrays
+    background_tasks.add_task(process_uploaded_pdf, temp_path, org_id, file.filename, file_id)
+    
+    return {"status": "success", "message": "File is being processed automatically in the background.", "file_id": file_id}
 
 @api_router.get("/api/knowledge")
-def get_knowledge_files():
-    if not knowledge_collection:
-        return []
-    data = knowledge_collection.get()
-    sources = set()
-    if data and data.get('metadatas'):
-        for meta in data['metadatas']:
-            sources.add(meta.get("source"))
-    return [{"filename": s} for s in sources]
+def api_get_knowledge(current_user: dict = Depends(get_current_user)):
+    org_id = current_user.get("org_id")
+    return get_knowledge_files(org_id)
+
+@api_router.delete("/api/knowledge/{file_id}")
+def api_delete_knowledge(file_id: int, filename: str, current_user: dict = Depends(get_current_user)):
+    org_id = current_user.get("org_id")
+    # Native pure delete
+    rag.remove_file_from_index(filename, org_id)
+    delete_knowledge_file(file_id, org_id)
+    return {"status": "success"}
 
 # --- Pronunciation Guide ---
 

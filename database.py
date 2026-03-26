@@ -176,6 +176,18 @@ def init_db():
             FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE CASCADE
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS knowledge_base (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            org_id INT NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            chunk_count INT DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'Processing',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+    ''')
     
     # Insert demo data
     cursor.execute("SELECT count(*) as cnt FROM sites")
@@ -787,3 +799,37 @@ def save_org_voice_settings(org_id: int, tts_provider: str, tts_voice_id: str, t
     cursor.execute("UPDATE organizations SET tts_provider = %s, tts_voice_id = %s, tts_language = %s WHERE id = %s", (tts_provider, tts_voice_id, tts_language, org_id))
     conn.close()
     return True
+
+# ─── Knowledge Base (RAG) ───
+
+def log_knowledge_file(org_id: int, filename: str, status: str = 'Processing', chunk_count: int = 0):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO knowledge_base (org_id, filename, chunk_count, status) VALUES (%s, %s, %s, %s)",
+                   (org_id, filename, chunk_count, status))
+    fid = cursor.lastrowid
+    conn.close()
+    return fid
+
+def update_knowledge_file_status(fid: int, status: str, chunk_count: int = 0):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE knowledge_base SET status = %s, chunk_count = %s WHERE id = %s", (status, chunk_count, fid))
+    conn.close()
+    return True
+
+def get_knowledge_files(org_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM knowledge_base WHERE org_id = %s ORDER BY created_at DESC", (org_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def delete_knowledge_file(fid: int, org_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM knowledge_base WHERE id = %s AND org_id = %s", (fid, org_id))
+    affected = cursor.rowcount
+    conn.close()
+    return affected > 0

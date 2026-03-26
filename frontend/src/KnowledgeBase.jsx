@@ -8,7 +8,10 @@ export default function KnowledgeBase({ apiUrl }) {
 
   const fetchFiles = async () => {
     try {
-      const res = await fetch(`${apiUrl}/knowledge`);
+      const authToken = localStorage.getItem('authToken');
+      const res = await fetch(`${apiUrl}/knowledge`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
       const data = await res.json();
       setFiles(data);
     } catch(e) {
@@ -18,6 +21,9 @@ export default function KnowledgeBase({ apiUrl }) {
 
   useEffect(() => {
     fetchFiles();
+    // Poll every 5 seconds since FAISS processes in the background!
+    const interval = setInterval(fetchFiles, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleUpload = async (e) => {
@@ -29,15 +35,17 @@ export default function KnowledgeBase({ apiUrl }) {
     formData.append("file", file);
 
     setUploading(true);
-    setStatusMsg('Vectorizing and Embedding PDF using Gemini 004...');
+    setStatusMsg('Vectorizing and Embedding PDF using internal local FAISS Engine...');
     try {
+      const authToken = localStorage.getItem('authToken');
       const res = await fetch(`${apiUrl}/knowledge/upload`, {
         method: "POST",
+        headers: { 'Authorization': `Bearer ${authToken}` },
         body: formData
       });
       const data = await res.json();
       if (data.status === 'success') {
-        setStatusMsg(`✅ Successfully processed ${data.chunks_added} semantic chunks!`);
+        setStatusMsg(`✅ File uploaded! Background worker is currently extracting and mapping chunks.`);
         fetchFiles();
         if (fileInputRef.current) fileInputRef.current.value = "";
       } else {
@@ -49,13 +57,25 @@ export default function KnowledgeBase({ apiUrl }) {
     setUploading(false);
   };
 
+  const handleDelete = async (fileId, filename) => {
+    if (!window.confirm(`Delete ${filename} from the Knowledge Base?`)) return;
+    try {
+      const authToken = localStorage.getItem('authToken');
+      await fetch(`${apiUrl}/knowledge/${fileId}?filename=${encodeURIComponent(filename)}`, { 
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` } 
+      });
+      fetchFiles();
+    } catch(e) {}
+  };
+
   return (
     <div className="glass-panel" style={{padding: '2rem'}}>
       <h2 style={{marginTop: 0, marginBottom: '0.5rem', color: '#f8fafc'}}>🧠 RAG Knowledge Base</h2>
-      <p style={{color: '#94a3b8', marginBottom: '2rem'}}>Upload company PDFs, product sheets, and manuals. The AI will instantly read these during live calls to answer highly technical questions exactly, eliminating hallucinations.</p>
+      <p style={{color: '#94a3b8', marginBottom: '2rem'}}>Upload company PDFs, product sheets, and manuals. The AI will instantly search and read these during live phone calls to eliminate hallucinations.</p>
       
       <div style={{display: 'flex', gap: '2rem', flexWrap: 'wrap'}}>
-        <div style={{flex: '1 1 300px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '1.5rem'}}>
+        <div style={{flex: '1 1 300px', background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '1.5rem', height: 'fit-content'}}>
           <h3 style={{marginTop: 0, color: '#e2e8f0'}}>Upload Document</h3>
           <form onSubmit={handleUpload} style={{display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem'}}>
             <input 
@@ -81,9 +101,17 @@ export default function KnowledgeBase({ apiUrl }) {
             ) : (
               <ul style={{listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px'}}>
                 {files.map((f, i) => (
-                  <li key={i} style={{display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px', borderLeft: '3px solid #38bdf8'}}>
-                    <span style={{fontSize: '1.2rem'}}>📄</span>
-                    <span style={{color: '#cbd5e1', fontWeight: 500}}>{f.filename}</span>
+                  <li key={i} style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '6px', borderLeft: f.status === 'Active' ? '3px solid #4ade80' : '3px solid #f59e0b'}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                      <span style={{fontSize: '1.2rem'}}>📄</span>
+                      <div>
+                        <div style={{color: '#cbd5e1', fontWeight: 500}}>{f.filename}</div>
+                        <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>
+                          {f.status === 'Processing' ? '⚙️ Synthesizing...' : `✅ Active (${f.chunk_count} FAISS Chunks)`}
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={() => handleDelete(f.id, f.filename)} style={{background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer'}}>🗑️</button>
                   </li>
                 ))}
               </ul>

@@ -110,9 +110,9 @@ async def handle_media_stream(websocket: WebSocket):
     try:
         _user_conn = get_conn()
         _user_cursor = _user_conn.cursor()
-        _user_cursor.execute("SELECT u.org_id FROM users u JOIN leads l ON 1=1 WHERE l.id = %s LIMIT 1", (_call_lead_id,))
+        _user_cursor.execute("SELECT org_id FROM leads WHERE id = %s LIMIT 1", (_call_lead_id,))
         _user_row = _user_cursor.fetchone()
-        _call_org_id = _user_row.get('org_id') if _user_row else None
+        _call_org_id = _user_row.get('org_id') if _user_row else 1
         _user_conn.close()
         if _call_org_id:
             custom = get_org_custom_prompt(_call_org_id)
@@ -216,25 +216,16 @@ async def handle_media_stream(websocket: WebSocket):
                                     chat_history.append({"role": "user", "parts": [{"text": f"Manager Whisper: {whisper}. Acknowledge this implicitly in your next response."}]})
                                 pending.clear()
 
-                        # RAG
+                        # RAG via Local FAISS
                         rag_context = ""
-                        try:
-                            from routes import knowledge_collection
-                            if knowledge_collection and knowledge_collection.count() > 0:
-                                import google.generativeai as gai
-                                gai.configure(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
-                                _loop = asyncio.get_event_loop()
-                                res = await _loop.run_in_executor(
-                                    None,
-                                    lambda: gai.embed_content(model="models/text-embedding-004", content=sentence, task_type="retrieval_query")
-                                )
-                                query_emb = res['embedding']
-                                results = knowledge_collection.query(query_embeddings=[query_emb], n_results=2)
-                                if results and results.get('documents') and results['documents'][0]:
-                                    docs = results['documents'][0]
-                                    rag_context = "\n[KNOWLEDGE BASE RELEVANT INFO]:\n" + "\n---\n".join(docs)
-                        except Exception as e:
-                            print(f"RAG error: {e}")
+                        if _call_org_id:
+                            try:
+                                import rag
+                                context = rag.retrieve_context(sentence, _call_org_id, top_k=2)
+                                if context:
+                                    rag_context = "\n\n[COMPANY KNOWLEDGE - Check if this has facts relevant to the discussion and explicitly use it]:\n" + context
+                            except Exception as e:
+                                conv_logger.error(f"RAG FAISS lookup error: {e}")
 
                         t_pre_llm = time.time()
                         final_system_instruction = dynamic_context + rag_context
