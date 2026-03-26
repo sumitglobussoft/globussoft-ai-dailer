@@ -664,9 +664,13 @@ async def handle_media_stream(websocket: WebSocket):
 
 async def sandbox_stream(websocket: WebSocket):
     await websocket.accept()
+    from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
+    import os, json, base64
+    import llm_provider
+    import httpx
+    
     dg = DeepgramClient(os.getenv("DEEPGRAM_API_KEY", "dummy"))
     dg_conn = dg.listen.websocket.v("1")
-    llm = genai.Client(api_key=os.getenv("GEMINI_API_KEY", "dummy"))
     chat_hist = []
 
     async def on_message(self, result, **kwargs):
@@ -675,23 +679,29 @@ async def sandbox_stream(websocket: WebSocket):
             chat_hist.append({"role": "user", "parts": [{"text": sentence}]})
             await websocket.send_json({"type": "transcript", "role": "user", "text": sentence})
             try:
-                response = await llm.aio.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=chat_hist,
-                    config=types.GenerateContentConfig(system_instruction="You are in AI sandbox test mode. A sales manager is interacting with you. Be extremely aggressive answering sales objections, keeping answers to one line.")
+                system_prompt = "You are in AI sandbox test mode. A sales manager is interacting with you. Be extremely aggressive answering sales objections, keeping answers to one line."
+                response_text = await llm_provider.generate_response(
+                    chat_history=chat_hist,
+                    system_instruction=system_prompt,
+                    max_tokens=150
                 )
-                chat_hist.append({"role": "model", "parts": [{"text": response.text}]})
+                
+                chat_hist.append({"role": "model", "parts": [{"text": response_text}]})
+                
                 url = f"https://api.elevenlabs.io/v1/text-to-speech/{os.getenv('ELEVENLABS_VOICE_ID')}/stream?output_format=mp3_44100_128"
                 headers = {"xi-api-key": os.getenv("ELEVENLABS_API_KEY")}
-                payload = {"text": response.text, "model_id": "eleven_turbo_v2"}
+                payload = {"text": response_text, "model_id": "eleven_turbo_v2"}
                 async with httpx.AsyncClient() as client:
                     async with client.stream("POST", url, json=payload, headers=headers) as resp:
                         async for chunk in resp.aiter_bytes(chunk_size=4000):
                             if chunk:
                                 await websocket.send_json({"type": "audio", "payload": base64.b64encode(chunk).decode('utf-8')})
-                await websocket.send_json({"type": "transcript", "role": "agent", "text": response.text})
-            except Exception:
-                pass
+                                
+                await websocket.send_json({"type": "transcript", "role": "agent", "text": response_text})
+            except Exception as e:
+                import logging
+                logging.getLogger("uvicorn.error").error(f"[SANDBOX CRASH] LLM Provider Error: {e}", exc_info=True)
+                print(f"Sandbox LLM Error: {e}")
 
     dg_conn.on(LiveTranscriptionEvents.Transcript, on_message)
     await dg_conn.start(LiveOptions(
