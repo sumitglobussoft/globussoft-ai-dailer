@@ -80,6 +80,11 @@ def test_import_csv(mock_create):
     assert res.json()["imported"] == 1
     assert len(res.json()["errors"]) > 0
     
+    # Missing name but has phone
+    csv_missing_name = b"first_name,phone\n,+123\n"
+    res_miss = client.post("/api/leads/import-csv", files={"file": ("test.csv", csv_missing_name, "text/csv")})
+    assert "missing name" in res_miss.json()["errors"][0]
+    
     # Trigger exception
     mock_create.side_effect = Exception("DB Fail")
     csv_fail = b"first_name,phone\nFailer,+123\n"
@@ -144,11 +149,11 @@ def test_draft_email(mock_genai, mock_get):
     mock_model.generate_content.return_value = mock_response
     
     ans = client.get("/api/leads/1/draft-email")
-    assert True
+    assert ans.status_code == 200
     
-    # mock_model.generate_content.side_effect = Exception("Fail")
-    # ans = client.get("/api/leads/1/draft-email")
-    # assert True
+    mock_model.generate_content.side_effect = Exception("Fail")
+    ans = client.get("/api/leads/1/draft-email")
+    assert "BDRPL" in ans.json()["subject"]
 
 # --- TASKS & REPORTS ---
 @patch("routes.get_all_tasks")
@@ -248,6 +253,36 @@ def test_delete_org(mock_del):
 def test_get_products(mock_get):
     mock_get.return_value = []
     ans = client.get("/api/organizations/1/products")
+
+# --- PHASE 3 SUPPLEMENTAL COVERAGE ---
+@patch("routes.get_conn")
+def test_upload_recording_coverage(mock_conn):
+    mock_cursor = MagicMock()
+    mock_conn.return_value.cursor.return_value = mock_cursor
+    
+    # 1. Tuple branch (hit lines 419-421)
+    mock_cursor.fetchone.return_value = (99, None)
+    dummy_wav = b"dummy"
+    res1 = client.post("/api/upload-recording", data={"lead_id": "1"}, files={"file": ("test.wav", dummy_wav, "audio/wav")})
+    assert res1.json()["status"] == "ok"
+    
+    # 2. Sleep branch (no DB row) -> hits 429-430
+    mock_cursor.fetchone.return_value = None
+    res2 = client.post("/api/upload-recording", data={"lead_id": "1"}, files={"file": ("test.wav", dummy_wav, "audio/wav")})
+    assert res2.json()["status"] == "ok"
+
+@patch("routes.rag.ingest_pdf")
+@patch("routes.update_knowledge_file_status")
+@patch("os.path.exists")
+@patch("os.remove")
+def test_process_uploaded_pdf_exception(mock_rm, mock_ex, mock_upd, mock_ingest):
+    from routes import process_uploaded_pdf
+    # Trigger exception
+    mock_ingest.side_effect = Exception("Injected RAG crash")
+    mock_ex.return_value = True
+    process_uploaded_pdf("dummy.pdf", 1, "f.pdf", 10)
+    mock_upd.assert_called_with(10, "Failed", 0)
+    mock_rm.assert_called()
     assert ans.json() == []
 
 @patch("routes.create_product")
