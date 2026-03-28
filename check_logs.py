@@ -24,7 +24,7 @@ def exec_sudo(cmd):
     
     # Filter journal specifically for STT results and LLM boundaries
     # Using python's paramiko to pull the logs cleanly
-    command = "journalctl -u callified-ai.service --since '30 minutes ago' --no-pager | grep -iE 'api_update_lead|put /api/leads|500 internal|422 unprocessable'"
+    command = "mysql -u callified -pCallified@2026 -e 'DESCRIBE callified_ai.leads;' || echo 'mysql connect failed'"
     
     stdin, stdout, stderr = ssh.exec_command(command)
     output = stdout.read().decode('utf-8')
