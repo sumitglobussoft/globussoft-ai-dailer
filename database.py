@@ -271,13 +271,14 @@ def update_lead(lead_id: int, data: dict, org_id: int):
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE leads SET first_name = %s, last_name = %s, phone = %s, source = %s
+        UPDATE leads SET first_name = %s, last_name = %s, phone = %s, source = %s, interest = %s
         WHERE id = %s AND org_id = %s
     ''', (
         data.get('first_name'),
         data.get('last_name', ''),
         data.get('phone'),
         data.get('source', 'Dashboard'),
+        data.get('interest'),
         lead_id,
         org_id
     ))

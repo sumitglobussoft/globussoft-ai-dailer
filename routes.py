@@ -13,6 +13,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
+from typing import List, Dict, Any, Optional
 from auth import get_current_user
 from database import (
     get_all_leads, get_lead_by_id, create_lead, update_lead, delete_lead,
@@ -38,6 +39,7 @@ class LeadCreate(BaseModel):
     last_name: str = ""
     phone: str
     source: str = "Dashboard"
+    interest: Optional[str] = None
 
 class PunchCreate(BaseModel):
     agent_name: str
