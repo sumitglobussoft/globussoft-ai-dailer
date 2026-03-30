@@ -7,7 +7,7 @@ from tests.ui_e2e.pages.crm_page import CrmPage
 def test_add_lead(auth_page, base_url):
     """Test adding a new lead via the CRM modal."""
     crm = CrmPage(auth_page, base_url)
-    auth_page.goto(base_url)
+    crm.navigate_with_cache_bust()
     time.sleep(2)
 
     test_phone = f"+91{random.randint(1000000000, 9999999999)}"
@@ -23,7 +23,7 @@ def test_add_lead(auth_page, base_url):
 def test_edit_lead(auth_page, base_url):
     """Test editing an existing lead."""
     crm = CrmPage(auth_page, base_url)
-    auth_page.goto(base_url)
+    crm.navigate_with_cache_bust()
     time.sleep(2)
 
     test_phone = f"+91{random.randint(1000000000, 9999999999)}"
@@ -44,7 +44,7 @@ def test_edit_lead(auth_page, base_url):
 def test_delete_lead(auth_page, base_url):
     """Test deleting a lead."""
     crm = CrmPage(auth_page, base_url)
-    auth_page.goto(base_url)
+    crm.navigate_with_cache_bust()
     time.sleep(2)
 
     test_phone = f"+91{random.randint(1000000000, 9999999999)}"
@@ -64,7 +64,7 @@ def test_delete_lead(auth_page, base_url):
 def test_search_lead(auth_page, base_url):
     """Test the search bar filters leads."""
     crm = CrmPage(auth_page, base_url)
-    auth_page.goto(base_url)
+    crm.navigate_with_cache_bust()
     time.sleep(2)
 
     test_phone = f"+91{random.randint(1000000000, 9999999999)}"

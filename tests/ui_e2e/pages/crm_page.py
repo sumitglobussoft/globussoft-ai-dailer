@@ -25,8 +25,8 @@ class CrmPage(BasePage):
         row.locator("button:has-text('Edit')").click()
         # Wait for Edit Lead modal
         self.page.wait_for_selector("h2:has-text('Edit Lead')", timeout=5000)
-        # Clear and fill last name field (second text input in form)
-        last_name_input = self.page.locator(".modal-overlay input[placeholder='e.g. Doe']")
+        # Edit modal inputs use name attributes, not placeholders
+        last_name_input = self.page.locator(".modal-overlay input[name='last_name']")
         last_name_input.fill(new_last_name)
         self.page.locator("button.btn-primary:has-text('Update Lead')").click()
 

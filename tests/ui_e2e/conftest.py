@@ -8,6 +8,15 @@ TEST_SESSION_ID = int(time.time())
 TEST_USER_EMAIL = os.getenv("E2E_USER_EMAIL", f"e2esession_{TEST_SESSION_ID}@globussoft.com")
 TEST_USER_PW = os.getenv("E2E_USER_PASSWORD", "AutoTest!2026")
 
+# Track whether the session user has been created yet
+_user_created = False
+
+
+def navigate_with_cache_bust(page, url="/"):
+    """Navigate with a cache-busting query param to avoid stale Cloudflare cache."""
+    separator = "&" if "?" in url else "?"
+    page.goto(f"{url}{separator}_cb={int(time.time())}")
+
 
 @pytest.fixture(scope="session")
 def base_url():
@@ -17,25 +26,35 @@ def base_url():
 @pytest.fixture
 def auth_context(browser, base_url):
     """
-    Creates a new browser context, signs up a fresh user, and returns the
-    authenticated context.
+    Creates a new browser context. Signs up on first call, logs in on subsequent calls.
+    Returns the authenticated context.
     """
+    global _user_created
+
     context = browser.new_context(base_url=base_url, viewport={"width": 1280, "height": 800})
     page = context.new_page()
-    page.goto("/")
+    navigate_with_cache_bust(page, base_url)
 
     # Wait for React app to render
     page.wait_for_selector('input[type="email"]', timeout=15000)
 
-    if page.is_visible('input[type="email"]'):
-        # Click Sign Up tab and register
-        page.locator(".tab-btn:has-text('Sign Up')").click()
+    if not _user_created:
+        # First time: sign up
+        page.locator("button:has-text('Sign Up')").first.click()
+        page.wait_for_selector('input[placeholder="e.g. Globussoft"]', timeout=5000)
         page.fill('input[placeholder="e.g. Globussoft"]', "Automated Testing Org")
         page.fill('input[placeholder="e.g. Sumit Kumar"]', "Automated Tester")
         page.fill('input[type="email"]', TEST_USER_EMAIL)
         page.fill('input[type="password"]', TEST_USER_PW)
-        page.locator("button.btn-primary:has-text('Create Account')").click()
-        # Wait for dashboard to load (logout button means we're in)
+        page.locator("button.btn-primary").click()
+        page.wait_for_selector("button:has-text('Logout')", timeout=15000)
+        _user_created = True
+    else:
+        # Subsequent: login with existing credentials
+        page.locator("button:has-text('Login')").first.click()
+        page.fill('input[type="email"]', TEST_USER_EMAIL)
+        page.fill('input[type="password"]', TEST_USER_PW)
+        page.locator("button.btn-primary").click()
         page.wait_for_selector("button:has-text('Logout')", timeout=15000)
 
     yield context
