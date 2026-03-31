@@ -606,77 +606,69 @@ async def handle_media_stream(websocket: WebSocket):
                             ws_logger.info(f"[RECORDING] Fetching for SID: {_exotel_call_sid}")
                             creds = f"{EXOTEL_API_KEY}:{EXOTEL_API_TOKEN}"
                             auth_b64 = base64.b64encode(creds.encode()).decode()
-                            # Exotel recording endpoint — append .json to avoid XML response
                             rec_api_url = f"https://api.exotel.com/v1/Accounts/{EXOTEL_ACCOUNT_SID}/Calls/{_exotel_call_sid}/Recording.json"
-                            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc:
-                                rec_resp = await _hc.get(rec_api_url, headers={"Authorization": f"Basic {auth_b64}"})
-                            if rec_resp.status_code == 200:
+
+                            # Retry up to 6 times (10s apart = ~60s total) — Exotel needs time to transcode
+                            for _attempt in range(6):
+                                async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc:
+                                    rec_resp = await _hc.get(rec_api_url, headers={"Authorization": f"Basic {auth_b64}"})
+
+                                if rec_resp.status_code != 200:
+                                    ws_logger.warning(f"[RECORDING] Exotel returned {rec_resp.status_code}, attempt {_attempt+1}")
+                                    await asyncio.sleep(10)
+                                    continue
+
                                 content_type = rec_resp.headers.get("content-type", "")
-                                ws_logger.info(f"[RECORDING] Response content-type: {content_type}, size: {len(rec_resp.content)} bytes")
-                                if "json" in content_type or "text" in content_type or "xml" in content_type:
-                                    # JSON response — extract RecordingUrl and download it
-                                    try:
-                                        rec_data = rec_resp.json()
-                                        # Exotel sometimes wraps in "Call" or "Recording"
-                                        call_obj = rec_data.get("Call", {})
-                                        remote_url = (
-                                            rec_data.get("Recording", {}).get("RecordingUrl") or 
-                                            rec_data.get("RecordingUrl") or
-                                            call_obj.get("RecordingUrl")
-                                        )
-                                        if not remote_url:
-                                            ws_logger.info(f"[RECORDING] Missing URL initially, waiting 10s for Exotel transcoding...")
-                                            await asyncio.sleep(10)
-                                            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc_retry:
-                                                rec_resp2 = await _hc_retry.get(rec_api_url, headers={"Authorization": f"Basic {auth_b64}"})
-                                            if rec_resp2.status_code == 200:
-                                                rec_data2 = rec_resp2.json()
-                                                call_obj2 = rec_data2.get("Call", {})
-                                                remote_url = (
-                                                    rec_data2.get("Recording", {}).get("RecordingUrl") or 
-                                                    rec_data2.get("RecordingUrl") or
-                                                    call_obj2.get("RecordingUrl")
-                                                )
-                                        
-                                        if remote_url:
-                                            ws_logger.info(f"[RECORDING] Got remote URL: {remote_url}, downloading...")
-                                            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc2:
-                                                audio_resp = await _hc2.get(remote_url, headers={"Authorization": f"Basic {auth_b64}"})
-                                            if audio_resp.status_code == 200 and len(audio_resp.content) > 1000:
-                                                _rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
-                                                os.makedirs(_rec_dir, exist_ok=True)
-                                                ext = "mp3"  # Exotel typically serves MP3
-                                                if "wav" in audio_resp.headers.get("content-type", ""):
-                                                    ext = "wav"
-                                                _rec_fname = f"call_{_call_lead_id}_{int(_call_start_time)}.{ext}"
-                                                _rec_path = os.path.join(_rec_dir, _rec_fname)
-                                                with open(_rec_path, "wb") as f:
-                                                    f.write(audio_resp.content)
-                                                recording_url = f"/api/recordings/{_rec_fname}"
-                                                ws_logger.info(f"[RECORDING] Downloaded and saved: {_rec_path} ({len(audio_resp.content)} bytes)")
-                                            else:
-                                                ws_logger.warning(f"[RECORDING] Failed to download from {remote_url}, status={audio_resp.status_code}, len={len(audio_resp.content)}")
-                                        else:
-                                            ws_logger.warning(f"[RECORDING] Missing RecordingUrl even after retry. JSON payload: {rec_data}")
-                                    except Exception as _je:
-                                        ws_logger.error(f"[RECORDING] JSON parse or download error: {_je}")
-                                elif len(rec_resp.content) > 1000:
-                                    # Direct audio bytes returned (not JSON)
+
+                                # Check if direct audio bytes
+                                if "audio" in content_type and len(rec_resp.content) > 1000:
                                     _rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
                                     os.makedirs(_rec_dir, exist_ok=True)
-                                    ext = "mp3"
-                                    if "wav" in content_type:
-                                        ext = "wav"
-                                    elif "ogg" in content_type:
-                                        ext = "ogg"
+                                    ext = "wav" if "wav" in content_type else ("ogg" if "ogg" in content_type else "mp3")
                                     _rec_fname = f"call_{_call_lead_id}_{int(_call_start_time)}.{ext}"
                                     _rec_path = os.path.join(_rec_dir, _rec_fname)
                                     with open(_rec_path, "wb") as f:
                                         f.write(rec_resp.content)
                                     recording_url = f"/api/recordings/{_rec_fname}"
                                     ws_logger.info(f"[RECORDING] Saved direct audio: {_rec_path} ({len(rec_resp.content)} bytes)")
+                                    break
+
+                                # JSON response — extract RecordingUrl
+                                try:
+                                    rec_data = rec_resp.json()
+                                    call_obj = rec_data.get("Call", {})
+                                    remote_url = (
+                                        rec_data.get("Recording", {}).get("RecordingUrl") or
+                                        rec_data.get("RecordingUrl") or
+                                        call_obj.get("RecordingUrl")
+                                    )
+                                    # Filter empty strings
+                                    if not remote_url or remote_url.strip() == "":
+                                        remote_url = None
+                                except Exception:
+                                    remote_url = None
+
+                                if remote_url:
+                                    ws_logger.info(f"[RECORDING] Got URL: {remote_url}, downloading...")
+                                    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc2:
+                                        audio_resp = await _hc2.get(remote_url, headers={"Authorization": f"Basic {auth_b64}"})
+                                    if audio_resp.status_code == 200 and len(audio_resp.content) > 1000:
+                                        _rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
+                                        os.makedirs(_rec_dir, exist_ok=True)
+                                        ext = "wav" if "wav" in audio_resp.headers.get("content-type", "") else "mp3"
+                                        _rec_fname = f"call_{_call_lead_id}_{int(_call_start_time)}.{ext}"
+                                        _rec_path = os.path.join(_rec_dir, _rec_fname)
+                                        with open(_rec_path, "wb") as f:
+                                            f.write(audio_resp.content)
+                                        recording_url = f"/api/recordings/{_rec_fname}"
+                                        ws_logger.info(f"[RECORDING] Downloaded: {_rec_path} ({len(audio_resp.content)} bytes)")
+                                    break
                                 else:
-                                    ws_logger.warning(f"[RECORDING] Response too small ({len(rec_resp.content)} bytes), skipping")
+                                    ws_logger.info(f"[RECORDING] No URL yet, retry {_attempt+1}/6, waiting 10s...")
+                                    await asyncio.sleep(10)
+
+                            if not recording_url:
+                                ws_logger.warning(f"[RECORDING] Exotel recording not available after 6 retries for SID: {_exotel_call_sid}")
                             else:
                                 ws_logger.warning(f"[RECORDING] Exotel returned {rec_resp.status_code}")
                         except Exception as _re:
