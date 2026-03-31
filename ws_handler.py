@@ -622,6 +622,7 @@ async def handle_media_stream(websocket: WebSocket):
                         EXOTEL_API_KEY=EXOTEL_API_KEY,
                         EXOTEL_API_TOKEN=EXOTEL_API_TOKEN,
                         EXOTEL_ACCOUNT_SID=EXOTEL_ACCOUNT_SID,
+                        _campaign_id=_campaign_id,
                     )
                 except Exception as _te:
                     import traceback

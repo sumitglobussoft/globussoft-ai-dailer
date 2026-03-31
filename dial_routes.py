@@ -112,7 +112,8 @@ async def dial_exotel(lead: dict):
                     lead_id=lead_id,
                     transcript_json=json.dumps([{"role": "System", "text": "Call blocked — this number is registered on TRAI NDNC (Do Not Call) registry. Exotel cannot connect to DND numbers without compliance approval."}], ensure_ascii=False),
                     recording_url=None,
-                    call_duration_s=0
+                    call_duration_s=0,
+                    campaign_id=lead.get("campaign_id"),
                 )
                 update_lead_status(lead_id, "DND Blocked")
                 from database import update_lead_note

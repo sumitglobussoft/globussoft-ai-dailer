@@ -24,6 +24,7 @@ async def save_call_recording_and_transcript(
     EXOTEL_API_KEY,
     EXOTEL_API_TOKEN,
     EXOTEL_ACCOUNT_SID,
+    _campaign_id=None,
 ):
     """
     Save the call transcript to the DB, fetch the Exotel recording (with retries),
@@ -184,4 +185,5 @@ async def save_call_recording_and_transcript(
             transcript_json=json.dumps(transcript_turns, ensure_ascii=False),
             recording_url=recording_url,
             call_duration_s=call_duration,
+            campaign_id=_campaign_id,
         )

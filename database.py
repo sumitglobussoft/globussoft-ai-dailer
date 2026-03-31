@@ -150,6 +150,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS call_transcripts (
             id INT AUTO_INCREMENT PRIMARY KEY,
             lead_id INT,
+            campaign_id INT,
             transcript JSON NOT NULL,
             recording_url TEXT,
             call_duration_s FLOAT DEFAULT 0,
@@ -246,6 +247,10 @@ def init_db():
     # --- Migrations for existing tables ---
     try:
         cursor.execute("ALTER TABLE organizations ADD COLUMN timezone VARCHAR(100) DEFAULT 'Asia/Kolkata'")
+    except Exception:
+        pass  # Column already exists
+    try:
+        cursor.execute("ALTER TABLE call_transcripts ADD COLUMN campaign_id INT DEFAULT NULL")
     except Exception:
         pass  # Column already exists
 
@@ -748,9 +753,9 @@ def get_campaign_leads(campaign_id: int) -> List[Dict]:
     cursor = conn.cursor()
     cursor.execute('''
         SELECT l.*,
-            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.call_duration_s > 5) as transcript_count,
-            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.recording_url IS NOT NULL AND ct.recording_url != '') as recording_count,
-            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id) as dial_attempts
+            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.campaign_id = cl.campaign_id AND ct.call_duration_s > 5) as transcript_count,
+            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.campaign_id = cl.campaign_id AND ct.recording_url IS NOT NULL AND ct.recording_url != '') as recording_count,
+            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.campaign_id = cl.campaign_id) as dial_attempts
         FROM leads l
         JOIN campaign_leads cl ON l.id = cl.lead_id
         WHERE cl.campaign_id = %s
@@ -787,8 +792,9 @@ def get_campaign_call_log(campaign_id: int) -> List[Dict]:
         FROM call_transcripts ct
         JOIN leads l ON ct.lead_id = l.id
         JOIN campaign_leads cl ON l.id = cl.lead_id AND cl.campaign_id = %s
+        WHERE ct.campaign_id = %s
         ORDER BY ct.created_at DESC
-    ''', (campaign_id,))
+    ''', (campaign_id, campaign_id))
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -927,13 +933,13 @@ def get_pronunciation_context() -> str:
 
 # ─── Call Transcripts ───
 
-def save_call_transcript(lead_id, transcript_json: str, recording_url: str = None, call_duration_s: float = 0):
+def save_call_transcript(lead_id, transcript_json: str, recording_url: str = None, call_duration_s: float = 0, campaign_id: int = None):
     """Save a complete call transcript for a lead."""
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO call_transcripts (lead_id, transcript, recording_url, call_duration_s) VALUES (%s, %s, %s, %s)",
-        (lead_id, transcript_json, recording_url, call_duration_s)
+        "INSERT INTO call_transcripts (lead_id, campaign_id, transcript, recording_url, call_duration_s) VALUES (%s, %s, %s, %s, %s)",
+        (lead_id, campaign_id, transcript_json, recording_url, call_duration_s)
     )
     conn.close()
     return cursor.lastrowid
