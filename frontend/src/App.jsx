@@ -1052,6 +1052,7 @@ export default function App() {
           onCampaignDial={handleCampaignDial} onCampaignWebCall={handleCampaignWebCall}
           activeVoiceProvider={activeVoiceProvider} activeVoiceId={activeVoiceId}
           activeLanguage={activeLanguage} dialingId={dialingId} webCallActive={webCallActive}
+          handleViewTranscripts={handleViewTranscripts} handleNote={handleNote}
         />
       ) : activeTab === 'ops' ? (
         <OpsTab reports={reports} tasks={tasks} handleCompleteTask={handleCompleteTask} />

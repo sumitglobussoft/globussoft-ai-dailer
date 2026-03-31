@@ -768,7 +768,7 @@ def get_campaign_stats(campaign_id: int) -> Dict:
     cursor.execute('''
         SELECT COUNT(*) as cnt FROM leads l
         JOIN campaign_leads cl ON l.id = cl.lead_id
-        WHERE cl.campaign_id = %s AND l.status = 'Closed'
+        WHERE cl.campaign_id = %s AND l.status IN ('Summarized', 'Closed')
     ''', (campaign_id,))
     appointments = cursor.fetchone()['cnt']
     conn.close()

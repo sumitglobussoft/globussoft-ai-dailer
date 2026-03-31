@@ -4,6 +4,7 @@ export default function CampaignsTab({
   campaigns, fetchCampaigns, orgProducts, leads,
   apiFetch, API_URL, selectedOrg,
   onCampaignDial, onCampaignWebCall,
+  handleViewTranscripts, handleNote,
   activeVoiceProvider, activeVoiceId, activeLanguage,
   dialingId, webCallActive
 }) {
@@ -216,7 +217,8 @@ export default function CampaignsTab({
               {campaignLeads.length === 0 ? (
                 <tr><td colSpan="5" style={{textAlign: 'center', color: '#64748b', padding: '2rem'}}>No leads in this campaign yet. Add some to start dialing!</td></tr>
               ) : campaignLeads.map(lead => (
-                <tr key={lead.id}>
+                <React.Fragment key={lead.id}>
+                <tr>
                   <td style={{fontWeight: 600}}>{lead.first_name} {lead.last_name}</td>
                   <td>{lead.phone}</td>
                   <td>{lead.source || '-'}</td>
@@ -245,6 +247,16 @@ export default function CampaignsTab({
                         }}>
                         {webCallActive === lead.id ? '🔴 End Call' : '🌐 Sim Web Call'}
                       </button>
+                      <button className="btn-call"
+                        onClick={() => handleViewTranscripts(lead)}
+                        style={{fontSize: '0.75rem', padding: '4px 10px', cursor: 'pointer', background: 'rgba(99,102,241,0.15)', color: '#818cf8', borderColor: 'rgba(99,102,241,0.3)'}}>
+                        📋 Transcript
+                      </button>
+                      <button className="btn-call"
+                        onClick={() => handleNote(lead)}
+                        style={{fontSize: '0.75rem', padding: '4px 10px', cursor: 'pointer', background: 'rgba(168,85,247,0.15)', color: '#a855f7', borderColor: 'rgba(168,85,247,0.3)'}}>
+                        📝 Note
+                      </button>
                       <button onClick={() => handleRemoveLead(lead.id)}
                         style={{fontSize: '0.75rem', padding: '4px 10px', cursor: 'pointer',
                           background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
@@ -254,6 +266,15 @@ export default function CampaignsTab({
                     </div>
                   </td>
                 </tr>
+                {lead.follow_up_note && (
+                  <tr>
+                    <td colSpan="5" style={{padding: '12px 24px', background: 'rgba(0,0,0,0.2)', borderLeft: '3px solid #6366f1'}}>
+                      <div style={{fontSize: '0.8rem', color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 600}}>AI Follow-Up Note</div>
+                      <div style={{whiteSpace: 'pre-wrap', color: '#e2e8f0', fontSize: '0.85rem', lineHeight: 1.5}}>{lead.follow_up_note}</div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
