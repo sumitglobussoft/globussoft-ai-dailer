@@ -5,8 +5,11 @@ export default function SettingsTab({
   selectedOrg, orgs, showProductInput, setShowProductInput, newProductName, setNewProductName,
   handleAddProduct, orgProducts, handleDeleteProduct, handleSaveProduct, scraping, handleScrapeProduct,
   promptDirty, handleSaveSystemPrompt, promptSaving, systemPromptAuto, systemPromptCustom,
-  setSystemPromptCustom, setPromptDirty
+  setSystemPromptCustom, setPromptDirty,
+  apiFetch, API_URL
 }) {
+  const [callFlow, setCallFlow] = React.useState('');
+  const [generating, setGenerating] = React.useState(false);
   return (
     <div style={{padding: '1rem', maxWidth: '800px', margin: '0 auto'}}>
       <div className="wa-header" style={{borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '2rem'}}>
@@ -196,6 +199,44 @@ export default function SettingsTab({
             </div>
           </div>
           <p style={{color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem'}}>This is the product knowledge the AI receives during calls. Edit to customize what the AI knows.</p>
+
+          {/* Call Flow Instructions */}
+          <div style={{marginBottom: '1.5rem'}}>
+            <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem'}}>📋 Call Flow Instructions (optional)</label>
+            <textarea className="form-input" rows={4} value={callFlow}
+              onChange={e => setCallFlow(e.target.value)}
+              placeholder="e.g. First ask if they filled the form. If yes, check interest. If interested, book appointment for tomorrow. If they ask about pricing, say our senior will explain..."
+              style={{resize: 'vertical', minHeight: '80px', fontSize: '0.85rem', lineHeight: 1.6}} />
+            <p style={{color: '#64748b', fontSize: '0.75rem', marginTop: '6px'}}>Write your call flow in plain English or Hindi. The AI will use these as instructions during calls.</p>
+          </div>
+
+          {/* Generate Button */}
+          <div style={{marginBottom: '1.5rem'}}>
+            <button className="btn-primary" style={{background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.85rem', padding: '10px 20px'}}
+              disabled={generating}
+              onClick={async () => {
+                if (!selectedOrg) return;
+                setGenerating(true);
+                try {
+                  const res = await apiFetch(`${API_URL}/organizations/${selectedOrg.id}/generate-prompt`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ call_flow: callFlow })
+                  });
+                  const data = await res.json();
+                  if (data.prompt) {
+                    setSystemPromptCustom(data.prompt);
+                    setPromptDirty(true);
+                    alert('System prompt generated! Review and click Save.');
+                  } else {
+                    alert(data.message || 'Generation failed');
+                  }
+                } catch(e) { alert('Failed to generate'); }
+                setGenerating(false);
+              }}>
+              {generating ? '⏳ Generating...' : '🤖 Generate System Prompt with AI'}
+            </button>
+            <span style={{color: '#64748b', fontSize: '0.75rem', marginLeft: '10px'}}>Uses your product info + call flow to create a complete prompt</span>
+          </div>
 
           {systemPromptAuto && !systemPromptCustom && (
             <div style={{marginBottom: '1rem'}}>

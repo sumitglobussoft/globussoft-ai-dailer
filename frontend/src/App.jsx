@@ -1108,6 +1108,7 @@ export default function App() {
           promptSaving={promptSaving} systemPromptAuto={systemPromptAuto}
           systemPromptCustom={systemPromptCustom} setSystemPromptCustom={setSystemPromptCustom}
           setPromptDirty={setPromptDirty}
+          apiFetch={apiFetch} API_URL={API_URL}
         />
       ) : activeTab === 'logs' ? (
         <LogsTab API_URL={API_URL} authToken={authToken} />

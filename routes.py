@@ -401,6 +401,50 @@ def api_save_system_prompt(org_id: int, payload: dict, current_user: dict = Depe
     save_org_custom_prompt(org_id, payload.get("custom_prompt", ""))
     return {"status": "ok"}
 
+@api_router.post("/api/organizations/{org_id}/generate-prompt")
+async def api_generate_prompt(org_id: int, payload: dict, current_user: dict = Depends(get_current_user)):
+    """Use AI to generate a system prompt from product knowledge + call flow instructions."""
+    import httpx
+    product_info = get_product_knowledge_context(org_id=org_id)
+    call_flow = payload.get("call_flow", "")
+    language = payload.get("language", "Hindi")
+
+    meta_prompt = f"""You are an expert at writing AI sales agent system prompts for phone calls.
+
+Based on the product knowledge and call flow instructions below, generate a complete system prompt in Devanagari Hindi that the AI voice agent will use during outbound sales calls.
+
+The prompt should:
+1. Define the agent's persona (friendly, professional sales caller)
+2. Include the company name and product info
+3. Define a clear call flow (greeting → qualification → appointment booking → goodbye)
+4. Handle common objections (not interested, wrong number, ask about pricing)
+5. Keep responses short (1-2 lines per turn — it's a phone call)
+6. Use natural conversational Hindi, not formal/bookish
+7. End with [HANGUP] command when call should end
+
+PRODUCT KNOWLEDGE:
+{product_info}
+
+CUSTOM CALL FLOW INSTRUCTIONS:
+{call_flow if call_flow else "Standard qualification call — confirm interest, book appointment with senior representative."}
+
+LANGUAGE: {language}
+
+Generate ONLY the system prompt text. No explanations."""
+
+    try:
+        import os
+        from google import genai
+        client = genai.Client(api_key=(os.getenv("GEMINI_API_KEY") or "").strip())
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=meta_prompt
+        )
+        generated = response.text.strip()
+        return {"status": "success", "prompt": generated}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @api_router.get("/api/organizations/{org_id}/voice-settings")
 def api_get_voice_settings(org_id: int, current_user: dict = Depends(get_current_user)):
     return get_org_voice_settings(org_id)
