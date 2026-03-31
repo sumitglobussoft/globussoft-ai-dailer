@@ -34,15 +34,25 @@ export default function TranscriptModal({ transcriptLead, setTranscriptLead, tra
                   )}
                 </div>
 
-                {/* Audio Player */}
-                {t.recording_url && (
-                  <div style={{marginBottom: '1rem', padding: '10px', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '8px', border: '1px solid rgba(99, 102, 241, 0.15)'}}>
-                    <div style={{fontSize: '0.8rem', color: '#818cf8', marginBottom: '6px', fontWeight: 600}}>🔊 Call Recording</div>
-                    <audio controls style={{width: '100%', height: '36px'}} src={t.recording_url}>
-                      Your browser does not support the audio element.
-                    </audio>
-                  </div>
-                )}
+                {/* Audio Player — color-coded by source */}
+                {t.recording_url && (() => {
+                  const url = t.recording_url || '';
+                  const isWav = url.endsWith('.wav');
+                  const isMp3 = url.endsWith('.mp3');
+                  const isWebm = url.endsWith('.webm');
+                  const sourceLabel = isWav ? '🖥️ Server Recording (Stereo)' : isMp3 ? '📞 Exotel Recording' : isWebm ? '🌐 Browser Recording' : '🔊 Recording';
+                  const color = isWav ? '#22d3ee' : isMp3 ? '#22c55e' : isWebm ? '#a855f7' : '#818cf8';
+                  const bg = isWav ? 'rgba(34,211,238,0.05)' : isMp3 ? 'rgba(34,197,94,0.05)' : isWebm ? 'rgba(168,85,247,0.05)' : 'rgba(99,102,241,0.05)';
+                  const border = isWav ? 'rgba(34,211,238,0.2)' : isMp3 ? 'rgba(34,197,94,0.2)' : isWebm ? 'rgba(168,85,247,0.2)' : 'rgba(99,102,241,0.15)';
+                  return (
+                    <div style={{marginBottom: '1rem', padding: '10px', background: bg, borderRadius: '8px', border: `1px solid ${border}`}}>
+                      <div style={{fontSize: '0.8rem', color, marginBottom: '6px', fontWeight: 600}}>{sourceLabel}</div>
+                      <audio controls style={{width: '100%', height: '36px'}} src={t.recording_url}>
+                        Your browser does not support the audio element.
+                      </audio>
+                    </div>
+                  );
+                })()}
 
                 {/* Turn-by-turn transcript */}
                 <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
