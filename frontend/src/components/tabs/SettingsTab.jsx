@@ -8,9 +8,80 @@ export default function SettingsTab({
   setSystemPromptCustom, setPromptDirty,
   apiFetch, API_URL
 }) {
-  const [agentPersona, setAgentPersona] = React.useState('');
-  const [callFlow, setCallFlow] = React.useState('');
-  const [generating, setGenerating] = React.useState(false);
+  const [productPrompts, setProductPrompts] = React.useState({});
+
+  // Load per-product prompts when products change
+  React.useEffect(() => {
+    if (!orgProducts || orgProducts.length === 0) return;
+    orgProducts.forEach(p => {
+      if (productPrompts[p.id]) return; // already loaded
+      apiFetch(`${API_URL}/products/${p.id}/prompt`)
+        .then(res => res.ok ? res.json() : { agent_persona: '', call_flow_instructions: '' })
+        .then(data => {
+          setProductPrompts(prev => ({
+            ...prev,
+            [p.id]: {
+              agent_persona: data.agent_persona || '',
+              call_flow_instructions: data.call_flow_instructions || '',
+              expanded: false,
+              generating: false,
+              saving: false
+            }
+          }));
+        })
+        .catch(() => {
+          setProductPrompts(prev => ({
+            ...prev,
+            [p.id]: { agent_persona: '', call_flow_instructions: '', expanded: false, generating: false, saving: false }
+          }));
+        });
+    });
+  }, [orgProducts]);
+
+  const updateProductPrompt = (productId, field, value) => {
+    setProductPrompts(prev => ({
+      ...prev,
+      [productId]: { ...prev[productId], [field]: value }
+    }));
+  };
+
+  const handleGenerateProductPrompt = async (productId) => {
+    updateProductPrompt(productId, 'generating', true);
+    try {
+      const res = await apiFetch(`${API_URL}/products/${productId}/generate-prompt`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          agent_persona: productPrompts[productId]?.agent_persona || '',
+          call_flow: productPrompts[productId]?.call_flow_instructions || ''
+        })
+      });
+      const data = await res.json();
+      if (data.prompt) {
+        setSystemPromptCustom(data.prompt);
+        setPromptDirty(true);
+        alert('System prompt generated from product persona! Review below and click Save.');
+      } else {
+        alert(data.message || 'Generation failed');
+      }
+    } catch(e) { alert('Failed to generate'); }
+    updateProductPrompt(productId, 'generating', false);
+  };
+
+  const handleSaveProductPrompt = async (productId) => {
+    updateProductPrompt(productId, 'saving', true);
+    try {
+      await apiFetch(`${API_URL}/products/${productId}/prompt`, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          agent_persona: productPrompts[productId]?.agent_persona || '',
+          call_flow_instructions: productPrompts[productId]?.call_flow_instructions || ''
+        })
+      });
+      alert('Persona & call flow saved!');
+    } catch(e) { alert('Failed to save'); }
+    updateProductPrompt(productId, 'saving', false);
+  };
+
   return (
     <div style={{padding: '1rem', maxWidth: '800px', margin: '0 auto'}}>
       <div className="wa-header" style={{borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: '2rem'}}>
@@ -27,25 +98,25 @@ export default function SettingsTab({
         <form onSubmit={handleAddPronunciation} style={{display: 'flex', gap: '12px', marginBottom: '2rem', alignItems: 'flex-end'}}>
           <div className="form-group" style={{marginBottom: 0, flex: 1}}>
             <label>Written Word</label>
-            <input 
-              className="form-input" 
-              required 
+            <input
+              className="form-input"
+              required
               value={pronFormData.word}
               onChange={e => setPronFormData({...pronFormData, word: e.target.value})}
               placeholder="e.g. Adsgpt"
-              data-testid="pron-word" 
+              data-testid="pron-word"
             />
           </div>
           <div style={{fontSize: '1.5rem', color: '#64748b', paddingBottom: '8px'}}>→</div>
           <div className="form-group" style={{marginBottom: 0, flex: 1}}>
             <label>How to Pronounce</label>
-            <input 
-              className="form-input" 
-              required 
+            <input
+              className="form-input"
+              required
               value={pronFormData.phonetic}
               onChange={e => setPronFormData({...pronFormData, phonetic: e.target.value})}
               placeholder="e.g. Ads G P T"
-              data-testid="pron-phonetic" 
+              data-testid="pron-phonetic"
             />
           </div>
           <button data-testid="add-rule-btn" type="submit" className="btn-primary" style={{height: '46px', padding: '0 20px', whiteSpace: 'nowrap'}}>
@@ -74,8 +145,8 @@ export default function SettingsTab({
                   <td style={{color: '#4ade80', fontStyle: 'italic'}}>🔊 "{p.phonetic}"</td>
                   <td style={{color: '#94a3b8', fontSize: '0.85rem'}}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
                   <td>
-                    <button 
-                      className="btn-call" 
+                    <button
+                      className="btn-call"
                       style={{background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)', padding: '4px 12px', fontSize: '0.8rem'}}
                       onClick={() => handleDeletePronunciation(p.id)}
                     >
@@ -139,7 +210,9 @@ export default function SettingsTab({
             <div style={{padding: '1.5rem', textAlign: 'center', color: '#64748b', background: 'rgba(0,0,0,0.2)', borderRadius: '8px'}}>No products yet. Add one to configure AI knowledge.</div>
           ) : (
             <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-              {orgProducts.map(p => (
+              {orgProducts.map(p => {
+                const pp = productPrompts[p.id] || { agent_persona: '', call_flow_instructions: '', expanded: false, generating: false, saving: false };
+                return (
                 <div key={p.id} style={{background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.05)'}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
                     <span style={{fontWeight: 700, fontSize: '1.05rem', color: '#e2e8f0'}}>{p.name}</span>
@@ -178,8 +251,57 @@ export default function SettingsTab({
                       onBlur={e => handleSaveProduct(p.id, { manual_notes: e.target.value })}
                       style={{resize: 'vertical', minHeight: '70px', fontSize: '0.85rem'}} />
                   </div>
+
+                  {/* Per-Product Agent Persona & Call Flow */}
+                  <div style={{marginTop: '1rem'}}>
+                    <button
+                      onClick={() => updateProductPrompt(p.id, 'expanded', !pp.expanded)}
+                      style={{
+                        background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)',
+                        color: '#a78bfa', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer',
+                        fontSize: '0.85rem', fontWeight: 600, width: '100%', textAlign: 'left'
+                      }}>
+                      {pp.expanded ? '▾' : '▸'} 🎭 Agent Persona & Call Flow
+                    </button>
+
+                    {pp.expanded && (
+                      <div style={{marginTop: '12px', padding: '12px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.1)'}}>
+                        <div style={{marginBottom: '1rem'}}>
+                          <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#a78bfa'}}>🎭 Agent Persona</label>
+                          <textarea className="form-input" rows={4}
+                            value={pp.agent_persona}
+                            onChange={e => updateProductPrompt(p.id, 'agent_persona', e.target.value)}
+                            placeholder="e.g. You are Meera, a professional sales agent..."
+                            style={{resize: 'vertical', minHeight: '80px', fontSize: '0.85rem', lineHeight: 1.6}} />
+                        </div>
+                        <div style={{marginBottom: '1rem'}}>
+                          <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#22d3ee'}}>📋 Call Flow Instructions</label>
+                          <textarea className="form-input" rows={5}
+                            value={pp.call_flow_instructions}
+                            onChange={e => updateProductPrompt(p.id, 'call_flow_instructions', e.target.value)}
+                            placeholder="e.g. Step 1: Greet. Step 2: Qualify..."
+                            style={{resize: 'vertical', minHeight: '100px', fontSize: '0.85rem', lineHeight: 1.6}} />
+                        </div>
+                        <div style={{display: 'flex', gap: '10px'}}>
+                          <button className="btn-primary"
+                            style={{background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.85rem', padding: '8px 16px'}}
+                            disabled={pp.generating}
+                            onClick={() => handleGenerateProductPrompt(p.id)}>
+                            {pp.generating ? '⏳ Generating...' : '🤖 Generate Prompt'}
+                          </button>
+                          <button className="btn-primary"
+                            style={{background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '0.85rem', padding: '8px 16px'}}
+                            disabled={pp.saving}
+                            onClick={() => handleSaveProductPrompt(p.id)}>
+                            {pp.saving ? '⏳ Saving...' : '💾 Save Persona & Flow'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -200,54 +322,6 @@ export default function SettingsTab({
             </div>
           </div>
           <p style={{color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem'}}>This is the product knowledge the AI receives during calls. Edit to customize what the AI knows.</p>
-
-          {/* Agent Persona */}
-          <div style={{marginBottom: '1.5rem'}}>
-            <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#a78bfa'}}>🎭 Agent Persona</label>
-            <textarea className="form-input" rows={5} value={agentPersona}
-              onChange={e => setAgentPersona(e.target.value)}
-              placeholder="e.g. You are Meera, an AI Sales Call Agent for XYZ Company. Sound professional, calm, confident. Speak in natural Hindi. Never argue. Be helpful and consultative..."
-              style={{resize: 'vertical', minHeight: '100px', fontSize: '0.85rem', lineHeight: 1.6}} />
-            <p style={{color: '#64748b', fontSize: '0.75rem', marginTop: '6px'}}>Who is the AI? Name, role, personality, behavior rules, language preferences.</p>
-          </div>
-
-          {/* Call Flow Instructions */}
-          <div style={{marginBottom: '1.5rem'}}>
-            <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#22d3ee'}}>📋 Call Flow Instructions</label>
-            <textarea className="form-input" rows={6} value={callFlow}
-              onChange={e => setCallFlow(e.target.value)}
-              placeholder="e.g. Step 1: Greet and confirm identity. Step 2: Ask if residential or commercial. Step 3: Ask preferred area. Step 4: Ask budget. Step 5: Ask email. Step 6: Book meeting. Step 7: Recap and thank."
-              style={{resize: 'vertical', minHeight: '120px', fontSize: '0.85rem', lineHeight: 1.6}} />
-            <p style={{color: '#64748b', fontSize: '0.75rem', marginTop: '6px'}}>Step-by-step conversation flow. What should the AI ask and in what order?</p>
-          </div>
-
-          {/* Generate Button */}
-          <div style={{marginBottom: '1.5rem'}}>
-            <button className="btn-primary" style={{background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.85rem', padding: '10px 20px'}}
-              disabled={generating}
-              onClick={async () => {
-                if (!selectedOrg) return;
-                setGenerating(true);
-                try {
-                  const res = await apiFetch(`${API_URL}/organizations/${selectedOrg.id}/generate-prompt`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ agent_persona: agentPersona, call_flow: callFlow })
-                  });
-                  const data = await res.json();
-                  if (data.prompt) {
-                    setSystemPromptCustom(data.prompt);
-                    setPromptDirty(true);
-                    alert('System prompt generated! Review and click Save.');
-                  } else {
-                    alert(data.message || 'Generation failed');
-                  }
-                } catch(e) { alert('Failed to generate'); }
-                setGenerating(false);
-              }}>
-              {generating ? '⏳ Generating...' : '🤖 Generate System Prompt with AI'}
-            </button>
-            <span style={{color: '#64748b', fontSize: '0.75rem', marginLeft: '10px'}}>Uses your product info + call flow to create a complete prompt</span>
-          </div>
 
           {systemPromptAuto && !systemPromptCustom && (
             <div style={{marginBottom: '1rem'}}>
