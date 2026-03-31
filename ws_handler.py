@@ -22,6 +22,8 @@ from database import (
 )
 from tts import synthesize_and_send_audio, _tts_recording_buffers
 import redis_store
+from prompt_builder import build_call_context
+from recording_service import save_call_recording_and_transcript
 
 # ─── Shared State ────────────────────────────────────────────────────────────
 # Non-serializable state stays in-memory (asyncio.Task, WebSocket connections)
@@ -177,166 +179,27 @@ async def handle_media_stream(websocket: WebSocket):
     except Exception:
         product_ctx = get_product_knowledge_context()
 
-    # Voice ID → Hindi name + gender mapping
-    _voice_names = {
-        # Sarvam male
-        'aditya': 'आदित्य', 'rahul': 'राहुल', 'amit': 'अमित', 'dev': 'देव', 'rohan': 'रोहन',
-        'varun': 'वरुण', 'kabir': 'कबीर', 'manan': 'मनन', 'sumit': 'सुमित', 'ratan': 'रतन',
-        'aayan': 'आयान', 'shubh': 'शुभ', 'ashutosh': 'आशुतोष', 'advait': 'अद्वैत',
-        # Sarvam female
-        'ritu': 'रितु', 'priya': 'प्रिया', 'neha': 'नेहा', 'pooja': 'पूजा', 'simran': 'सिमरन',
-        'kavya': 'काव्या', 'ishita': 'इशिता', 'shreya': 'श्रेया', 'roopa': 'रूपा',
-        # SmallestAI male
-        'raj': 'राज', 'arnav': 'अर्णव', 'raman': 'रमन', 'raghav': 'राघव', 'aarav': 'आरव',
-        'ankur': 'अंकुर', 'aravind': 'अरविंद', 'saurabh': 'सौरभ', 'chetan': 'चेतन', 'ashish': 'आशीष',
-        # SmallestAI female
-        'kajal': 'काजल', 'pragya': 'प्रज्ञा', 'nisha': 'निशा', 'deepika': 'दीपिका', 'diya': 'दिया',
-        'sushma': 'सुषमा', 'shweta': 'श्वेता', 'ananya': 'अनन्या', 'mithali': 'मिताली',
-        'saina': 'साइना', 'sanya': 'सान्या', 'mansi': 'मानसी',
-    }
-    _female_voices = {'kajal', 'pragya', 'nisha', 'deepika', 'diya', 'sushma', 'shweta', 'ananya',
-                      'mithali', 'saina', 'sanya', 'pooja', 'mansi', 'priya',
-                      'ritu', 'neha', 'simran', 'kavya', 'ishita', 'shreya', 'roopa',
-                      'amiAXapsDOAiHJqbsAZj', '6JsmTroalVewG1gA6Jmw', '9vP6R7VVxNwGIGLnpl17', 'hO2yZ8lxM3axUxL8OeKX'}
-    _voice_id = (_tts_voice_override or "").lower()
-    _agent_name = _voice_names.get(_voice_id, "अर्जुन")
-    if _voice_id in _female_voices:
-        _agent_gender_hint = "तुम लड़की हो। 'रही हूँ', 'करूँगी', 'बोल रही हूँ' बोलो।"
-        _bol = "बोल रही हूँ"
-    else:
-        _agent_gender_hint = "तुम लड़का हो। 'रहा हूँ', 'करूँगा', 'बोल रहा हूँ' बोलो।"
-        _bol = "बोल रहा हूँ"
-
-    # Extract company name from product context or org name
-    _company_name = "हमारी कंपनी"
-    if product_ctx:
-        # Try to extract company name from product knowledge
-        import re
-        _co_match = re.search(r'by\s+(\w[\w\s]*?)[\)\—\-]', product_ctx)
-        if _co_match:
-            _company_name = _co_match.group(1).strip()
-    if _company_name == "हमारी कंपनी":
-        try:
-            _org_conn = get_conn()
-            _org_cur = _org_conn.cursor()
-            _org_cur.execute("SELECT name FROM organizations WHERE id = %s", (_call_org_id if '_call_org_id' in dir() else 1,))
-            _org_row = _org_cur.fetchone()
-            if _org_row:
-                _company_name = _org_row['name']
-            _org_conn.close()
-        except Exception:
-            pass
-
-    # Use only first name to address the lead
-    _lead_first = lead_name.split()[0] if lead_name.strip() else "Customer"
-
-    # Detect lead source for contextual greeting — campaign source overrides lead source
-    _lead_source = ""
-    try:
-        if _campaign_id:
-            _src_conn = get_conn()
-            _src_cur = _src_conn.cursor()
-            _src_cur.execute("SELECT lead_source FROM campaigns WHERE id = %s", (_campaign_id,))
-            _src_row = _src_cur.fetchone()
-            if _src_row and _src_row.get('lead_source'):
-                _lead_source = _src_row['lead_source'].strip().lower()
-            _src_conn.close()
-        if not _lead_source:
-            _src_conn = get_conn()
-            _src_cur = _src_conn.cursor()
-            _src_cur.execute("SELECT source FROM leads WHERE id = %s", (_call_lead_id,))
-            _src_row = _src_cur.fetchone()
-            if _src_row:
-                _lead_source = (_src_row.get('source') or "").strip().lower()
-            _src_conn.close()
-    except Exception:
-        pass
-
-    # Map source to Hindi platform name
-    _source_map = {
-        'meta': 'Facebook', 'facebook': 'Facebook', 'fb': 'Facebook',
-        'google': 'Google', 'google ads': 'Google Ads',
-        'instagram': 'Instagram', 'insta': 'Instagram',
-        'linkedin': 'LinkedIn', 'website': 'हमारी वेबसाइट',
-    }
-    _platform = _source_map.get(_lead_source, "हमारी वेबसाइट")
-    _source_context = f"{_platform} पर हमारा ad देखकर enquiry की थी" if _platform != "हमारी वेबसाइट" else "हमारी वेबसाइट पर फॉर्म भरा था"
-
-    # Build system prompt — use per-product persona if available, else default
-    if _product_persona or _product_call_flow:
-        # Per-product prompt: product has its own persona + call flow
-        dynamic_context = (
-            f"{_product_persona}\n\n" if _product_persona else
-            f"तुम {_agent_name} हो। {_agent_gender_hint} तुम {_company_name} कंपनी से बोल रहे हो।\n"
-            f"तुम {_lead_first} को कॉल कर रहे हो। इन्होंने {_source_context}।\n"
-            f"- लीड को सिर्फ पहले नाम से बुलाओ: '{_lead_first} जी'।\n\n"
-        )
-        # Inject variables into persona (replace {{first_name}}, {{company}}, etc.)
-        dynamic_context = dynamic_context.replace("{{first_name}}", _lead_first)
-        dynamic_context = dynamic_context.replace("{{company}}", _company_name)
-        dynamic_context = dynamic_context.replace("{{agent_name}}", _agent_name)
-        dynamic_context = dynamic_context.replace("{{source_context}}", _source_context)
-
-        if _product_call_flow:
-            dynamic_context += f"\n## कॉल फ्लो\n{_product_call_flow}\n\n"
-            dynamic_context = dynamic_context.replace("{{first_name}}", _lead_first)
-
-        # Always append core rules
-        dynamic_context += (
-            f"## ज़रूरी नियम\n"
-            f"- हर जवाब 1-2 लाइन। फोन कॉल है, छोटा बोलो।\n"
-            f"- एक बार में एक ही सवाल।\n"
-            f"- STT गलत लिख सकता है। मतलब समझो, spelling मत देखो।\n"
-            f"- कोई formatting नहीं — no *, no #, no bullets। सादा टेक्स्ट।\n"
-            f"- तुम {_agent_name} हो, इंसान हो। कभी AI मत बोलो।\n"
-            f"- कॉल खत्म करने के लिए सिर्फ [HANGUP] लिखो।\n"
-            f"{pronunciation_ctx}"
-            f"{product_ctx}"
-        )
-    else:
-        # Default hardcoded prompt (no per-product persona)
-        dynamic_context = (
-            f"तुम {_agent_name} हो। {_agent_gender_hint} तुम {_company_name} कंपनी से बोल रहे हो।\n"
-            f"तुम {_lead_first} को कॉल कर रहे हो। इन्होंने {_source_context}।\n"
-            f"- लीड को सिर्फ पहले नाम से बुलाओ: '{_lead_first} जी'। फुल नेम या लास्ट नेम कभी मत बोलो।\n\n"
-
-            f"## तुम्हारी पहचान\n"
-            f"- तुम्हारा नाम: {_agent_name}\n"
-            f"- कंपनी: {_company_name}\n"
-            f"- अगर कोई पूछे 'कहाँ से बोल रहे हो?' या 'कौन सी कंपनी?' तो तुरंत बोलो: 'मैं {_company_name} से {_agent_name} {_bol}।'\n"
-            f"- कंपनी का नाम कभी छुपाओ मत। पहले ही बोल दो।\n\n"
-
-            f"## गोल\n"
-            f"सिर्फ एक काम — अपॉइंटमेंट बुक करना। प्रोडक्ट समझाना तुम्हारा काम नहीं है।\n\n"
-
-            f"## कॉल फ्लो\n"
-            f"1. इंट्रो: 'नमस्ते {_lead_first} जी, मैं {_agent_name}, {_company_name} से {_bol}। आपने {_source_context} क्या?'\n"
-            f"2. अगर हाँ: 'अभी भी इंटरेस्ट है क्या इसमें?'\n"
-            f"3. अगर इंटरेस्ट है: 'अच्छा बढ़िया, तो आप कल या परसों कब फ्री होंगे? हमारे सीनियर आपको कॉल करेंगे।'\n"
-            f"4. टाइम मिलने पर: टाइम रिपीट करो, थैंक यू बोलो।\n"
-            f"5. एंड: 'डन, आपको कॉल आएगा। थैंक यू!' फिर [HANGUP]\n\n"
-
-            f"## अगर फॉर्म नहीं भरा\n"
-            f"'अच्छा सॉरी, शायद गलती से नंबर आ गया। आपका दिन अच्छा हो।' फिर [HANGUP]\n\n"
-
-            f"## अगर इंटरेस्ट नहीं\n"
-            f"'बिल्कुल, कोई बात नहीं। थैंक यू।' फिर [HANGUP]\n\n"
-
-            f"## अगर प्रोडक्ट के बारे में पूछें\n"
-            f"सिर्फ एक लाइन में बताओ, फिर तुरंत अपॉइंटमेंट पर आओ: 'इसे डीटेल में हमारे सीनियर समझाएंगे, आप कब फ्री हैं?'\n\n"
-
-            f"## ज़रूरी नियम\n"
-            f"- हर जवाब 1-2 लाइन। फोन कॉल है, छोटा बोलो।\n"
-            f"- एक बार में एक ही सवाल। दो चीज़ें एक साथ मत बोलो।\n"
-            f"- सवाल में 'क्या', 'ना', 'है क्या' लगाओ ताकि सवाल जैसा लगे।\n"
-            f"- STT गलत लिख सकता है ('की थी' → 'key thi')। मतलब समझो, spelling मत देखो।\n"
-            f"- कोई formatting नहीं — no *, no #, no bullets। सादा टेक्स्ट।\n"
-            f"- तुम {_agent_name} हो, इंसान हो। कभी AI मत बोलो।\n"
-            f"- जो बोल चुके हो दोबारा मत बोलो।\n"
-            f"- कॉल खत्म करने के लिए सिर्फ [HANGUP] लिखो।\n"
-            f"{pronunciation_ctx}"
-            f"{product_ctx}"
-        )
+    # Build call context (voice identity, company name, lead source, system prompt)
+    _ctx = build_call_context(
+        lead_name=lead_name,
+        lead_phone=lead_phone,
+        interest=interest,
+        _call_lead_id=_call_lead_id,
+        _campaign_id=_campaign_id,
+        _call_org_id=_call_org_id,
+        _tts_voice_override=_tts_voice_override,
+        product_ctx=product_ctx,
+        _product_persona=_product_persona,
+        _product_call_flow=_product_call_flow,
+        pronunciation_ctx=pronunciation_ctx,
+    )
+    dynamic_context = _ctx["dynamic_context"]
+    _agent_name = _ctx["_agent_name"]
+    _lead_first = _ctx["_lead_first"]
+    _company_name = _ctx["_company_name"]
+    _bol = _ctx["_bol"]
+    _source_context = _ctx["_source_context"]
+    greeting_text = _ctx["greeting_text"]
 
     if not dg_client:
         dg_client = DeepgramClient(os.getenv("DEEPGRAM_API_KEY", "dummy"))
@@ -582,7 +445,6 @@ async def handle_media_stream(websocket: WebSocket):
     _tts_recording_buffers[stream_sid] = []
     ws_logger.info(f"[WS] Immediate stream init, sid={stream_sid}")
 
-    greeting_text = f"नमस्ते {_lead_first} जी, मैं {_agent_name}, {_company_name} से {_bol}। आपने {_source_context} क्या?"
     chat_history.append({"role": "model", "parts": [{"text": greeting_text}]})
     ws_logger.info(f"[GREETING] Immediate greeting for {lead_name}, sid={stream_sid}")
     call_logger.call_event(stream_sid, "GREETING_SENT", f"to={lead_name}")
@@ -620,7 +482,6 @@ async def handle_media_stream(websocket: WebSocket):
 
                 if not greeting_sent:
                     greeting_sent = True
-                    greeting_text = f"नमस्ते {_lead_first} जी, मैं {_agent_name}, {_company_name} से {_bol}। आपने {_source_context} क्या?"
                     chat_history.append({"role": "model", "parts": [{"text": greeting_text}]})
                     ws_logger.info(f"[GREETING] Sending greeting for {lead_name}")
                     call_logger.call_event(stream_sid, "GREETING_SENT", f"to={lead_name}")
@@ -747,162 +608,21 @@ async def handle_media_stream(websocket: WebSocket):
         if stream_sid:
             call_logger.call_event(stream_sid, "WS_DISCONNECTED", f"turns={len(chat_history)}")
             call_logger.end_call(stream_sid)
-            # Save transcript to DB
+            # Save transcript and recording to DB
             if _call_lead_id and chat_history:
                 try:
-                    transcript_turns = []
-                    for msg in chat_history:
-                        role = "AI" if msg.get("role") == "model" else "User"
-                        text = ""
-                        parts = msg.get("parts", [])
-                        if parts and isinstance(parts[0], dict):
-                            text = parts[0].get("text", "")
-                        elif parts and isinstance(parts[0], str):
-                            text = parts[0]
-                        if text:
-                            transcript_turns.append({"role": role, "text": text})
-
-                    recording_url = None
-                    if _exotel_call_sid:
-                        try:
-                            ws_logger.info(f"[RECORDING] Fetching for SID: {_exotel_call_sid}")
-                            creds = f"{EXOTEL_API_KEY}:{EXOTEL_API_TOKEN}"
-                            auth_b64 = base64.b64encode(creds.encode()).decode()
-                            rec_api_url = f"https://api.exotel.com/v1/Accounts/{EXOTEL_ACCOUNT_SID}/Calls/{_exotel_call_sid}/Recording.json"
-
-                            # Retry up to 6 times (10s apart = ~60s total) — Exotel needs time to transcode
-                            for _attempt in range(6):
-                                async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc:
-                                    rec_resp = await _hc.get(rec_api_url, headers={"Authorization": f"Basic {auth_b64}"})
-
-                                if rec_resp.status_code != 200:
-                                    ws_logger.warning(f"[RECORDING] Exotel returned {rec_resp.status_code}, attempt {_attempt+1}")
-                                    await asyncio.sleep(10)
-                                    continue
-
-                                content_type = rec_resp.headers.get("content-type", "")
-
-                                # Check if direct audio bytes
-                                if "audio" in content_type and len(rec_resp.content) > 1000:
-                                    _rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
-                                    os.makedirs(_rec_dir, exist_ok=True)
-                                    ext = "wav" if "wav" in content_type else ("ogg" if "ogg" in content_type else "mp3")
-                                    _rec_fname = f"call_{_call_lead_id}_{int(_call_start_time)}.{ext}"
-                                    _rec_path = os.path.join(_rec_dir, _rec_fname)
-                                    with open(_rec_path, "wb") as f:
-                                        f.write(rec_resp.content)
-                                    recording_url = f"/api/recordings/{_rec_fname}"
-                                    ws_logger.info(f"[RECORDING] Saved direct audio: {_rec_path} ({len(rec_resp.content)} bytes)")
-                                    break
-
-                                # JSON response — extract RecordingUrl
-                                try:
-                                    rec_data = rec_resp.json()
-                                    call_obj = rec_data.get("Call", {})
-                                    remote_url = (
-                                        rec_data.get("Recording", {}).get("RecordingUrl") or
-                                        rec_data.get("RecordingUrl") or
-                                        call_obj.get("RecordingUrl")
-                                    )
-                                    # Filter empty strings
-                                    if not remote_url or remote_url.strip() == "":
-                                        remote_url = None
-                                except Exception:
-                                    remote_url = None
-
-                                if remote_url:
-                                    ws_logger.info(f"[RECORDING] Got URL: {remote_url}, downloading...")
-                                    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as _hc2:
-                                        audio_resp = await _hc2.get(remote_url, headers={"Authorization": f"Basic {auth_b64}"})
-                                    if audio_resp.status_code == 200 and len(audio_resp.content) > 1000:
-                                        _rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
-                                        os.makedirs(_rec_dir, exist_ok=True)
-                                        ext = "wav" if "wav" in audio_resp.headers.get("content-type", "") else "mp3"
-                                        _rec_fname = f"call_{_call_lead_id}_{int(_call_start_time)}.{ext}"
-                                        _rec_path = os.path.join(_rec_dir, _rec_fname)
-                                        with open(_rec_path, "wb") as f:
-                                            f.write(audio_resp.content)
-                                        recording_url = f"/api/recordings/{_rec_fname}"
-                                        ws_logger.info(f"[RECORDING] Downloaded: {_rec_path} ({len(audio_resp.content)} bytes)")
-                                    break
-                                else:
-                                    ws_logger.info(f"[RECORDING] No URL yet, retry {_attempt+1}/6, waiting 10s...")
-                                    await asyncio.sleep(10)
-
-                            if not recording_url:
-                                ws_logger.warning(f"[RECORDING] Exotel recording not available after 6 retries, falling back to server-side recording")
-                            else:
-                                ws_logger.warning(f"[RECORDING] Exotel returned {rec_resp.status_code}")
-                        except Exception as _re:
-                            ws_logger.error(f"[RECORDING] Error fetching from Exotel: {_re}")
-
-                    # Server-side recording fallback — merge mic + TTS PCM into WAV
-                    if not recording_url:
-                        try:
-                            import struct, wave
-                            mic_chunks = _recording_mic_chunks
-                            tts_chunks = _tts_recording_buffers.get(stream_sid, [])
-                            if mic_chunks or tts_chunks:
-                                ws_logger.info(f"[RECORDING] Building server-side WAV: {len(mic_chunks)} mic chunks, {len(tts_chunks)} tts chunks")
-                                # Both are timestamped: (time, pcm_bytes) at 8000Hz 16-bit mono
-                                SAMPLE_RATE = 8000
-                                SAMPLE_WIDTH = 2  # 16-bit
-
-                                # Find time range
-                                all_times = [t for t, _ in mic_chunks] + [t for t, _ in tts_chunks]
-                                if all_times:
-                                    t_start = min(all_times)
-                                    t_end = max(all_times) + 0.5  # small padding
-                                    total_samples = int((t_end - t_start) * SAMPLE_RATE)
-
-                                    # Create stereo buffer: left=user, right=AI
-                                    user_buf = bytearray(total_samples * SAMPLE_WIDTH)
-                                    ai_buf = bytearray(total_samples * SAMPLE_WIDTH)
-
-                                    for ts, pcm in mic_chunks:
-                                        offset = int((ts - t_start) * SAMPLE_RATE) * SAMPLE_WIDTH
-                                        end = offset + len(pcm)
-                                        if end <= len(user_buf):
-                                            user_buf[offset:end] = pcm
-
-                                    for ts, pcm in tts_chunks:
-                                        offset = int((ts - t_start) * SAMPLE_RATE) * SAMPLE_WIDTH
-                                        end = offset + len(pcm)
-                                        if end <= len(ai_buf):
-                                            ai_buf[offset:end] = pcm
-
-                                    # Interleave into stereo (L=user, R=ai)
-                                    stereo = bytearray(total_samples * SAMPLE_WIDTH * 2)
-                                    for i in range(total_samples):
-                                        src = i * SAMPLE_WIDTH
-                                        dst = i * SAMPLE_WIDTH * 2
-                                        stereo[dst:dst+SAMPLE_WIDTH] = user_buf[src:src+SAMPLE_WIDTH]
-                                        stereo[dst+SAMPLE_WIDTH:dst+SAMPLE_WIDTH*2] = ai_buf[src:src+SAMPLE_WIDTH]
-
-                                    _rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
-                                    os.makedirs(_rec_dir, exist_ok=True)
-                                    _rec_fname = f"call_{_call_lead_id}_{int(_call_start_time)}.wav"
-                                    _rec_path = os.path.join(_rec_dir, _rec_fname)
-
-                                    with wave.open(_rec_path, 'wb') as wf:
-                                        wf.setnchannels(2)
-                                        wf.setsampwidth(SAMPLE_WIDTH)
-                                        wf.setframerate(SAMPLE_RATE)
-                                        wf.writeframes(bytes(stereo))
-
-                                    recording_url = f"/api/recordings/{_rec_fname}"
-                                    ws_logger.info(f"[RECORDING] Server-side WAV saved: {_rec_path} ({len(stereo)} bytes, {round(total_samples/SAMPLE_RATE, 1)}s)")
-                        except Exception as _wav_err:
-                            ws_logger.error(f"[RECORDING] Server-side WAV error: {_wav_err}")
-
-                    call_duration = round(time.time() - _call_start_time, 1)
-                    if transcript_turns:
-                        save_call_transcript(
-                            lead_id=_call_lead_id,
-                            transcript_json=json.dumps(transcript_turns, ensure_ascii=False),
-                            recording_url=recording_url,
-                            call_duration_s=call_duration
-                        )
+                    await save_call_recording_and_transcript(
+                        stream_sid=stream_sid,
+                        _call_lead_id=_call_lead_id,
+                        _exotel_call_sid=_exotel_call_sid,
+                        chat_history=chat_history,
+                        _recording_mic_chunks=_recording_mic_chunks,
+                        _tts_recording_buffers=_tts_recording_buffers,
+                        _call_start_time=_call_start_time,
+                        EXOTEL_API_KEY=EXOTEL_API_KEY,
+                        EXOTEL_API_TOKEN=EXOTEL_API_TOKEN,
+                        EXOTEL_ACCOUNT_SID=EXOTEL_ACCOUNT_SID,
+                    )
                 except Exception as _te:
                     import traceback
                     ws_logger.error(f"[TRANSCRIPT] Error saving: {_te}\n{traceback.format_exc()}")
