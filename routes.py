@@ -457,7 +457,7 @@ async def api_upload_recording(current_user: dict = Depends(get_current_user), f
 @api_router.get("/api/recordings/{filename}")
 async def serve_recording(filename: str):
     import re
-    if not re.match(r'^call_\d+_\d+\.(wav|webm|mp3|ogg)$', filename):
+    if not re.match(r'^(call|exotel)_[\w]+\.(wav|webm|mp3|ogg)$', filename):
         return JSONResponse(status_code=404, content={"error": "Not found"})
     rec_dir = os.path.join(os.path.dirname(__file__), "recordings")
     file_path = os.path.join(rec_dir, filename)
