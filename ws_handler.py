@@ -129,8 +129,19 @@ async def handle_media_stream(websocket: WebSocket):
     except Exception:
         product_ctx = get_product_knowledge_context()
 
+    # Gender-aware persona based on selected TTS voice
+    _female_voices = {'kajal', 'pragya', 'nisha', 'deepika', 'diya', 'sushma', 'shweta', 'ananya',
+                      'mithali', 'saina', 'sanya', 'pooja', 'mansi', 'priya'}
+    _voice_id = (_tts_voice_override or "").lower()
+    if _voice_id in _female_voices:
+        _agent_name = "Priya"
+        _agent_gender_hint = "Tum ek ladki ho. 'rahi hoon', 'karungi', 'bol rahi hoon' use karo."
+    else:
+        _agent_name = "Arjun"
+        _agent_gender_hint = "Tum ek ladka ho. 'raha hoon', 'karunga', 'bol raha hoon' use karo."
+
     dynamic_context = (
-        f"Tum Arjun ho — ek friendly, professional lead qualifier. Tum {lead_name} ko call kar rahe ho. "
+        f"Tum {_agent_name} ho — ek friendly, professional lead qualifier. {_agent_gender_hint} Tum {lead_name} ko call kar rahe ho. "
         f"Tumhare records mein hai ki unhone {interest} ke baare mein ek form bhara tha website par. "
         f"\n\nTUMHARA GOAL: Call ka SIRF EK goal hai — appointment book karna. Product explain karna tumhara kaam NAHI hai. "
         f"\n\nCALL FLOW (strictly follow this order): "
