@@ -109,6 +109,15 @@ async def handle_media_stream(websocket: WebSocket):
     # Load pronunciation guide
     pronunciation_ctx = get_pronunciation_context()
 
+    # Check for campaign context (from query params or Redis pending call)
+    _campaign_id = None
+    _qp_campaign = websocket.query_params.get("campaign_id", "")
+    if _qp_campaign and _qp_campaign.isdigit():
+        _campaign_id = int(_qp_campaign)
+    if not _campaign_id:
+        _pending_info = redis_store.get_pending_call("latest")
+        _campaign_id = _pending_info.get("campaign_id")
+
     # Load product knowledge for system prompt
     product_ctx = ""
     try:
@@ -118,7 +127,14 @@ async def handle_media_stream(websocket: WebSocket):
         _user_row = _user_cursor.fetchone()
         _call_org_id = _user_row.get('org_id') if _user_row else 1
         _user_conn.close()
-        if _call_org_id:
+
+        if _campaign_id:
+            # Campaign-specific: load ONLY that campaign's product
+            from database import get_product_context_for_campaign
+            product_ctx = get_product_context_for_campaign(_campaign_id)
+            if not product_ctx:
+                product_ctx = get_product_knowledge_context(org_id=_call_org_id)
+        elif _call_org_id:
             custom = get_org_custom_prompt(_call_org_id)
             if custom.strip():
                 product_ctx = "\n\n[PRODUCT KNOWLEDGE]:\n" + custom
