@@ -1,6 +1,7 @@
 import React from 'react';
+import { formatTime } from '../../utils/dateFormat';
 
-export default function WhatsAppTab({ whatsappLogs }) {
+export default function WhatsAppTab({ whatsappLogs, orgTimezone }) {
   return (
     <div className="whatsapp-container">
       <div className="wa-header">
@@ -17,7 +18,7 @@ export default function WhatsAppTab({ whatsappLogs }) {
               <div className="wa-message-body">{log.message}</div>
               <div className="wa-message-meta">
                 <span className="wa-pill">{log.msg_type} Trigger</span>
-                <span className="wa-time">{new Date(log.sent_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                <span className="wa-time">{formatTime(log.sent_at, orgTimezone)}</span>
                 <span className="wa-ticks">✓✓</span>
               </div>
             </div>

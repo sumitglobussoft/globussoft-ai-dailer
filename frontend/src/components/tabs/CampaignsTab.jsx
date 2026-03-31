@@ -9,7 +9,7 @@ export default function CampaignsTab({
   handleViewTranscripts, handleNote,
   activeVoiceProvider, activeVoiceId, activeLanguage,
   INDIAN_VOICES, INDIAN_LANGUAGES,
-  dialingId, webCallActive
+  dialingId, webCallActive, orgTimezone
 }) {
   const [view, setView] = useState('list'); // 'list' or 'detail'
   const [selectedCampaign, setSelectedCampaign] = useState(null);
@@ -297,6 +297,7 @@ export default function CampaignsTab({
           setCsvFile={setCsvFile}
           apiFetch={apiFetch}
           API_URL={API_URL}
+          orgTimezone={orgTimezone}
         />
         <CampaignModals
           showCreateModal={false}

@@ -162,6 +162,7 @@ export default function App() {
   // Product Knowledge State
   const [orgs, setOrgs] = useState([]);
   const [selectedOrg, setSelectedOrg] = useState(null);
+  const [orgTimezone, setOrgTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [orgProducts, setOrgProducts] = useState([]);
   const [scraping, setScraping] = useState(null); // product_id being scraped
   const [newOrgName, setNewOrgName] = useState('');
@@ -317,6 +318,18 @@ export default function App() {
       // Auto-select user's org if only one
       if (data.length === 1 && !selectedOrg) {
         setSelectedOrg(data[0]);
+        // Set org timezone (or auto-detect and save)
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (data[0].timezone) {
+          setOrgTimezone(data[0].timezone);
+        } else {
+          // First time — save browser timezone to org
+          setOrgTimezone(browserTz);
+          apiFetch(`${API_URL}/organizations/${data[0].id}/timezone`, {
+            method: 'PUT', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ timezone: browserTz })
+          }).catch(() => {});
+        }
         fetchOrgProducts(data[0].id);
         fetchSystemPrompt(data[0].id);
         // Load voice settings
@@ -1069,18 +1082,20 @@ export default function App() {
           INDIAN_VOICES={INDIAN_VOICES} INDIAN_LANGUAGES={INDIAN_LANGUAGES}
           dialingId={dialingId} webCallActive={webCallActive}
           handleViewTranscripts={handleViewTranscripts} handleNote={handleNote}
+          orgTimezone={orgTimezone}
         />
       ) : activeTab === 'ops' ? (
         <OpsTab reports={reports} tasks={tasks} handleCompleteTask={handleCompleteTask} />
       ) : activeTab === 'analytics' ? (
         <AnalyticsTab analyticsData={analyticsData} />
       ) : activeTab === 'whatsapp' ? (
-        <WhatsAppTab whatsappLogs={whatsappLogs} />
+        <WhatsAppTab whatsappLogs={whatsappLogs} orgTimezone={orgTimezone} />
       ) : activeTab === 'integrations' ? (
-        <IntegrationsTab 
+        <IntegrationsTab
           handleCreateIntegration={handleCreateIntegration}
           intFormData={intFormData} setIntFormData={setIntFormData}
           CRM_SCHEMAS={CRM_SCHEMAS} loading={loading} integrations={integrations}
+          orgTimezone={orgTimezone}
         />
       ) : activeTab === 'monitor' ? (
         <div style={{padding: '1rem'}}>
@@ -1095,7 +1110,7 @@ export default function App() {
           <Sandbox apiUrl={API_URL} />
         </div>
       ) : activeTab === 'settings' ? (
-        <SettingsTab 
+        <SettingsTab orgTimezone={orgTimezone}
           handleAddPronunciation={handleAddPronunciation} pronFormData={pronFormData}
           setPronFormData={setPronFormData} pronunciations={pronunciations}
           handleDeletePronunciation={handleDeletePronunciation} selectedOrg={selectedOrg}
@@ -1128,14 +1143,14 @@ export default function App() {
         editingLead={editingLead} handleSaveEdit={handleSaveEdit}
         editFormData={editFormData} setEditFormData={setEditFormData}
       />
-      <DocumentVault 
+      <DocumentVault
         activeLeadDocs={activeLeadDocs} setActiveLeadDocs={setActiveLeadDocs}
         handleUploadDoc={handleUploadDoc} docFormData={docFormData}
-        setDocFormData={setDocFormData} docs={docs}
+        setDocFormData={setDocFormData} docs={docs} orgTimezone={orgTimezone}
       />
-      <TranscriptModal 
+      <TranscriptModal
         transcriptLead={transcriptLead} setTranscriptLead={setTranscriptLead}
-        transcripts={transcripts}
+        transcripts={transcripts} orgTimezone={orgTimezone}
       />
       <EmailDraftModal
         emailDraft={emailDraft} setEmailDraft={setEmailDraft}

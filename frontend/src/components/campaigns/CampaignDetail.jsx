@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDateTime } from '../../utils/dateFormat';
 
 export default function CampaignDetail({
   selectedCampaign, setSelectedCampaign,
@@ -13,7 +14,7 @@ export default function CampaignDetail({
   onCampaignDial, onCampaignWebCall,
   dialingId, webCallActive,
   setSelectedLeadIds, setShowAddLeadsModal, setShowCsvImportModal, setCsvFile,
-  apiFetch, API_URL
+  apiFetch, API_URL, orgTimezone
 }) {
   const stats = getCampaignStats(selectedCampaign);
   return (
@@ -252,7 +253,7 @@ export default function CampaignDetail({
                     <td style={{fontWeight: 600}}>{call.first_name} {call.last_name || ''}</td>
                     <td style={{fontFamily: 'SFMono-Regular, Consolas, monospace', color: '#cbd5e1', fontSize: '0.85rem'}}>{call.phone}</td>
                     <td><span className="badge">{call.source || '-'}</span></td>
-                    <td style={{fontSize: '0.8rem', color: '#94a3b8'}}>{new Date(call.created_at + (call.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString()}</td>
+                    <td style={{fontSize: '0.8rem', color: '#94a3b8'}}>{formatDateTime(call.created_at, orgTimezone)}</td>
                     <td>
                       <span style={{
                         padding: '3px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600,

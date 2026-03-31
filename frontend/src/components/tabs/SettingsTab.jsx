@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate } from '../../utils/dateFormat';
 
 export default function SettingsTab({
   handleAddPronunciation, pronFormData, setPronFormData, pronunciations, handleDeletePronunciation,
@@ -6,7 +7,7 @@ export default function SettingsTab({
   handleAddProduct, orgProducts, handleDeleteProduct, handleSaveProduct, scraping, handleScrapeProduct,
   promptDirty, handleSaveSystemPrompt, promptSaving, systemPromptAuto, systemPromptCustom,
   setSystemPromptCustom, setPromptDirty,
-  apiFetch, API_URL
+  apiFetch, API_URL, orgTimezone
 }) {
   const [productPrompts, setProductPrompts] = React.useState({});
 
@@ -143,7 +144,7 @@ export default function SettingsTab({
                 <tr key={p.id}>
                   <td style={{fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace'}}>{p.word}</td>
                   <td style={{color: '#4ade80', fontStyle: 'italic'}}>🔊 "{p.phonetic}"</td>
-                  <td style={{color: '#94a3b8', fontSize: '0.85rem'}}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
+                  <td style={{color: '#94a3b8', fontSize: '0.85rem'}}>{formatDate(p.created_at, orgTimezone)}</td>
                   <td>
                     <button
                       className="btn-call"

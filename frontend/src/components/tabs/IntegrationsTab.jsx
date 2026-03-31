@@ -1,7 +1,8 @@
 import React from 'react';
+import { formatDateTime } from '../../utils/dateFormat';
 
 export default function IntegrationsTab({
-  handleCreateIntegration, intFormData, setIntFormData, CRM_SCHEMAS, loading, integrations
+  handleCreateIntegration, intFormData, setIntFormData, CRM_SCHEMAS, loading, integrations, orgTimezone
 }) {
   return (
     <div className="integrations-container" style={{padding: '1rem'}}>
@@ -165,7 +166,7 @@ export default function IntegrationsTab({
                   <td>
                     <span className="badge" style={{background: 'rgba(34, 197, 94, 0.1)', color: '#4ade80'}}>Active Sync</span>
                   </td>
-                  <td style={{color: '#94a3b8', fontSize: '0.9rem'}}>{intg.last_synced_at ? new Date(intg.last_synced_at).toLocaleString() : 'Never'}</td>
+                  <td style={{color: '#94a3b8', fontSize: '0.9rem'}}>{intg.last_synced_at ? formatDateTime(intg.last_synced_at, orgTimezone) : 'Never'}</td>
                 </tr>
               ))}
             </tbody>

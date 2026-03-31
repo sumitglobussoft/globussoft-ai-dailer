@@ -162,6 +162,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS organizations (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
+            timezone VARCHAR(100) DEFAULT 'Asia/Kolkata',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -242,6 +243,12 @@ def init_db():
         except pymysql.IntegrityError:
             pass
     
+    # --- Migrations for existing tables ---
+    try:
+        cursor.execute("ALTER TABLE organizations ADD COLUMN timezone VARCHAR(100) DEFAULT 'Asia/Kolkata'")
+    except Exception:
+        pass  # Column already exists
+
     conn.close()
 
 def get_all_leads(org_id: int) -> List[Dict]:

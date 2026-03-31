@@ -315,6 +315,16 @@ def api_delete_organization(org_id: int, current_user: dict = Depends(get_curren
     delete_organization(org_id)
     return {"status": "ok"}
 
+@api_router.put("/api/organizations/{org_id}/timezone")
+def api_update_org_timezone(org_id: int, payload: dict, current_user: dict = Depends(get_current_user)):
+    tz = payload.get("timezone", "Asia/Kolkata")
+    from database import get_conn
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE organizations SET timezone = %s WHERE id = %s", (tz, org_id))
+    conn.close()
+    return {"status": "ok", "timezone": tz}
+
 @api_router.get("/api/organizations/{org_id}/products")
 def api_get_products(org_id: int, current_user: dict = Depends(get_current_user)):
     return get_products_by_org(org_id)

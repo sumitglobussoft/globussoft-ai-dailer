@@ -1,7 +1,8 @@
 import React from 'react';
+import { formatDateTime } from '../../utils/dateFormat';
 
 export default function DocumentVault({
-  activeLeadDocs, setActiveLeadDocs, handleUploadDoc, docFormData, setDocFormData, docs
+  activeLeadDocs, setActiveLeadDocs, handleUploadDoc, docFormData, setDocFormData, docs, orgTimezone
 }) {
   if (!activeLeadDocs) return null;
 
@@ -33,7 +34,7 @@ export default function DocumentVault({
                 <div key={doc.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.05)', padding: '12px 16px', borderRadius: '8px'}}>
                   <div>
                     <div style={{fontWeight: 600, color: '#e2e8f0'}}>{doc.file_name}</div>
-                    <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{new Date(doc.uploaded_at).toLocaleString()}</div>
+                    <div style={{fontSize: '0.8rem', color: '#94a3b8'}}>{formatDateTime(doc.uploaded_at, orgTimezone)}</div>
                   </div>
                   <a href={doc.file_url} target="_blank" rel="noreferrer" style={{color: '#38bdf8', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 600}}>View &rarr;</a>
                 </div>
