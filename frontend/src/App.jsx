@@ -805,20 +805,26 @@ export default function App() {
     }
   };
 
-  const handleNote = async (lead) => {
-    const rawNote = lead.follow_up_note || '';
-    const newNote = prompt(`Update the manual timeline note for ${lead.first_name} ${lead.last_name}:`, rawNote);
-    if (newNote !== null) {
-      try {
-        await apiFetch(`${API_URL}/leads/${lead.id}/notes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ note: newNote })
-        });
-        fetchLeads(); // Instantly refresh UI
-      } catch(e) {
-        console.error("Error saving note", e);
-      }
+  const [noteLead, setNoteLead] = useState(null);
+  const [noteText, setNoteText] = useState('');
+
+  const handleNote = (lead) => {
+    setNoteLead(lead);
+    setNoteText(lead.follow_up_note || '');
+  };
+
+  const handleSaveNote = async () => {
+    if (!noteLead) return;
+    try {
+      await apiFetch(`${API_URL}/leads/${noteLead.id}/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: noteText })
+      });
+      fetchLeads();
+      setNoteLead(null);
+    } catch(e) {
+      console.error("Error saving note", e);
     }
   };
 
@@ -1120,9 +1126,34 @@ export default function App() {
         transcriptLead={transcriptLead} setTranscriptLead={setTranscriptLead}
         transcripts={transcripts}
       />
-      <EmailDraftModal 
+      <EmailDraftModal
         emailDraft={emailDraft} setEmailDraft={setEmailDraft}
       />
+
+      {/* Note Modal */}
+      {noteLead && (
+        <div className="modal-overlay" onClick={() => setNoteLead(null)}>
+          <div className="glass-panel modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: '520px'}}>
+            <h2 style={{marginTop: 0, marginBottom: '0.5rem'}}>📝 Quick Note</h2>
+            <p style={{color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1.5rem'}}>
+              {noteLead.first_name} {noteLead.last_name} — {noteLead.phone}
+            </p>
+            <textarea className="form-input" rows={5} value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="Type your follow-up note here..."
+              style={{width: '100%', minHeight: '120px', resize: 'vertical', fontSize: '0.9rem', lineHeight: 1.5}} />
+            <div style={{display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '1.5rem'}}>
+              <button onClick={() => setNoteLead(null)}
+                style={{background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1', padding: '8px 18px', borderRadius: '8px', cursor: 'pointer'}}>
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={handleSaveNote}>
+                Save Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
