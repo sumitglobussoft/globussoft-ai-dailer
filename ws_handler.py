@@ -343,8 +343,14 @@ async def handle_media_stream(websocket: WebSocket):
                                 conv_logger.info("[COMMAND] LLM explicitly commanded a websocket disconnect.")
                                 if stream_sid:
                                     call_logger.call_event(stream_sid, "LLM_HANGUP", "AI explicitly ended the call block.")
-                                # Allow the TTS worker to naturally finish speaking the current buffer, then die
-                                await asyncio.sleep(5)
+                                # Wait for TTS worker to finish speaking ALL queued sentences
+                                try:
+                                    await asyncio.wait_for(worker_task, timeout=15)
+                                    conv_logger.info("[HANGUP] TTS drain complete, closing connection.")
+                                except (asyncio.TimeoutError, Exception):
+                                    conv_logger.info("[HANGUP] TTS drain timed out, forcing close.")
+                                # Small grace period for audio to reach the client
+                                await asyncio.sleep(1)
                                 try:
                                     await websocket.close()
                                 except Exception:
