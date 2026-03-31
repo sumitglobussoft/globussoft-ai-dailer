@@ -19,6 +19,8 @@ export default function CampaignsTab({
   const [loading, setLoading] = useState(false);
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [csvFile, setCsvFile] = useState(null);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const eventSourceRef = React.useRef(null);
   const [campVoice, setCampVoice] = useState({tts_provider: '', tts_voice_id: '', tts_language: ''});
 
   useEffect(() => { fetchCampaigns(); }, []);
@@ -64,13 +66,30 @@ export default function CampaignsTab({
     setView('detail');
     fetchCampaignLeads(campaign.id);
     fetchCampVoice(campaign.id);
+    startEventStream(campaign.id);
   };
 
   const handleBack = () => {
+    stopEventStream();
     setView('list');
     setSelectedCampaign(null);
     setCampaignLeads([]);
+    setLiveEvents([]);
     fetchCampaigns();
+  };
+
+  const startEventStream = (campaignId) => {
+    stopEventStream();
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+    const es = new EventSource(`${API_URL}/campaign-events?token=${token}&campaign_id=${campaignId}`);
+    es.onmessage = (e) => setLiveEvents(prev => [...prev.slice(-49), e.data]);
+    es.onerror = () => es.close();
+    eventSourceRef.current = es;
+  };
+
+  const stopEventStream = () => {
+    if (eventSourceRef.current) { eventSourceRef.current.close(); eventSourceRef.current = null; }
   };
 
   const handleCreateCampaign = async (e) => {
@@ -270,6 +289,21 @@ export default function CampaignsTab({
               : 'Using org default'}
           </div>
         </div>
+
+        {/* Live Dial Events Feed */}
+        {liveEvents.length > 0 && (
+          <div className="glass-panel" style={{marginBottom: '1rem', padding: '12px', maxHeight: '200px', overflowY: 'auto'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+              <span style={{fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px'}}>📡 Live Campaign Activity</span>
+              <button onClick={() => setLiveEvents([])} style={{background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.7rem'}}>Clear</button>
+            </div>
+            {liveEvents.map((ev, i) => (
+              <div key={i} style={{fontSize: '0.8rem', color: '#e2e8f0', padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.03)', fontFamily: 'SFMono-Regular, Consolas, monospace'}}>
+                {ev}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{display: 'flex', gap: '10px', marginBottom: '1rem', flexWrap: 'wrap'}}>
           <button className="btn-primary" onClick={() => { setSelectedLeadIds([]); setShowAddLeadsModal(true); }}>+ Add from CRM</button>
