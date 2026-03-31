@@ -390,6 +390,7 @@ export default function CampaignsTab({
                           fontWeight: lead.transcript_count > 0 ? 600 : 400}}>
                         {lead.transcript_count > 0 ? `📋 ${lead.transcript_count} Transcript${lead.transcript_count > 1 ? 's' : ''}` : '📋 No Calls'}
                         {lead.recording_count > 0 && ' 🔊'}
+                        {lead.dial_attempts > 0 && ` (${lead.dial_attempts} dial${lead.dial_attempts > 1 ? 's' : ''})`}
                       </button>
                       <button className="btn-call"
                         onClick={() => handleNote(lead)}

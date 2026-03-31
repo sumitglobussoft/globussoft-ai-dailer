@@ -737,7 +737,8 @@ def get_campaign_leads(campaign_id: int) -> List[Dict]:
     cursor.execute('''
         SELECT l.*,
             (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.call_duration_s > 5) as transcript_count,
-            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.recording_url IS NOT NULL AND ct.recording_url != '') as recording_count
+            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id AND ct.recording_url IS NOT NULL AND ct.recording_url != '') as recording_count,
+            (SELECT COUNT(*) FROM call_transcripts ct WHERE ct.lead_id = l.id) as dial_attempts
         FROM leads l
         JOIN campaign_leads cl ON l.id = cl.lead_id
         WHERE cl.campaign_id = %s
