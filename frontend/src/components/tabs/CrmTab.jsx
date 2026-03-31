@@ -79,6 +79,7 @@ export default function CrmTab({
               onChange={e => { setActiveVoiceProvider(e.target.value); setActiveVoiceId(INDIAN_VOICES[e.target.value]?.[0]?.id || ''); }}
               style={{width: 'auto', height: '32px', fontSize: '0.8rem', padding: '4px 8px', minWidth: '100px'}}>
               <option value="elevenlabs">ElevenLabs</option>
+              <option value="sarvam">Sarvam AI</option>
               <option value="smallest">Smallest AI</option>
             </select>
             <select className="form-input" value={activeVoiceId}
