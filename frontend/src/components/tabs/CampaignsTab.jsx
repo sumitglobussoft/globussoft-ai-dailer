@@ -336,6 +336,38 @@ export default function CampaignsTab({
           </div>
         )}
 
+        {/* Quick Add Lead Form */}
+        <div className="glass-panel" style={{padding: '12px', marginBottom: '1rem', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap'}}>
+          <span style={{fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600}}>➕ Quick Add:</span>
+          <input className="form-input" placeholder="Name" id="qa-name"
+            style={{width: '120px', height: '32px', fontSize: '0.8rem', padding: '4px 8px'}} />
+          <input className="form-input" placeholder="Phone" id="qa-phone"
+            style={{width: '130px', height: '32px', fontSize: '0.8rem', padding: '4px 8px'}} />
+          <button className="btn-primary" style={{height: '32px', fontSize: '0.8rem', padding: '4px 12px'}}
+            onClick={async () => {
+              const name = document.getElementById('qa-name').value.trim();
+              const phone = document.getElementById('qa-phone').value.trim();
+              if (!name || !phone) { alert('Name and phone required'); return; }
+              try {
+                const res = await apiFetch(`${API_URL}/leads`, {
+                  method: 'POST', headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ first_name: name, phone: phone, source: 'Manual' })
+                });
+                const data = await res.json();
+                if (data.id) {
+                  await apiFetch(`${API_URL}/campaigns/${selectedCampaign.id}/leads`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ lead_ids: [data.id] })
+                  });
+                  document.getElementById('qa-name').value = '';
+                  document.getElementById('qa-phone').value = '';
+                  fetchCampaignLeads(selectedCampaign.id);
+                  fetchCampaigns();
+                } else { alert(data.message || 'Error'); }
+              } catch(e) { alert('Failed'); }
+            }}>Add & Assign</button>
+        </div>
+
         <div style={{display: 'flex', gap: '10px', marginBottom: '1rem', flexWrap: 'wrap'}}>
           <button className="btn-primary" onClick={() => { setSelectedLeadIds([]); setShowAddLeadsModal(true); }}>+ Add from CRM</button>
           <button className="btn-primary" style={{background: 'linear-gradient(135deg, #22d3ee, #06b6d4)'}}
