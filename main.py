@@ -540,18 +540,34 @@ async def process_recording(recording_url: str, call_sid: str, phone: str):
             # Update Database!
             conn = get_conn()
             cursor = conn.cursor()
+            # Match to the most recent transcript WITHOUT a recording for this phone
+            phone_match = f"%{phone[-10:]}%" if len(phone) >= 10 else f"%{phone}%"
             cursor.execute('''
-                UPDATE call_transcripts 
+                UPDATE call_transcripts
                 SET recording_url = %s
                 WHERE id = (
                     SELECT t.id FROM (
                         SELECT ct.id FROM call_transcripts ct
                         JOIN leads l ON ct.lead_id = l.id
-                        WHERE l.phone LIKE %s
+                        WHERE l.phone LIKE %s AND (ct.recording_url IS NULL OR ct.recording_url = '')
                         ORDER BY ct.created_at DESC LIMIT 1
                     ) as t
                 )
-            ''', (public_audio_url, f"%{phone[-10:]}%" if len(phone) >= 10 else f"%{phone}%"))
+            ''', (public_audio_url, phone_match))
+            if cursor.rowcount == 0:
+                # Fallback: attach to most recent transcript for this phone even if it has a recording
+                cursor.execute('''
+                    UPDATE call_transcripts
+                    SET recording_url = %s
+                    WHERE id = (
+                        SELECT t.id FROM (
+                            SELECT ct.id FROM call_transcripts ct
+                            JOIN leads l ON ct.lead_id = l.id
+                            WHERE l.phone LIKE %s
+                            ORDER BY ct.created_at DESC LIMIT 1
+                        ) as t
+                    )
+                ''', (public_audio_url, phone_match))
             conn.commit()
             log.error(f"[WEBHOOK DB SYNC] Attached {public_audio_url} to phone {phone}")
             
