@@ -100,6 +100,7 @@ async def handle_media_stream(websocket: WebSocket):
     is_exotel_stream = False
     chat_history = []
     _llm_lock = asyncio.Lock()
+    _hangup_requested = [False]  # mutable flag to block new transcripts after [HANGUP]
     _last_transcript_time = [0.0]
     _debounce_delay = 0.05
     _recording_mic_chunks = []
@@ -181,6 +182,9 @@ async def handle_media_stream(websocket: WebSocket):
         sentence = result.channel.alternatives[0].transcript
         if sentence and result.is_final:
             conv_logger = logging.getLogger("uvicorn.error")
+            if _hangup_requested[0]:
+                conv_logger.info(f"[STT] IGNORED (hangup pending): {sentence}")
+                return
             conv_logger.info(f"[STT] USER SAID: {sentence}")
             if stream_sid:
                 call_logger.call_event(stream_sid, "STT_TRANSCRIPT", sentence[:100])
@@ -335,6 +339,7 @@ async def handle_media_stream(websocket: WebSocket):
                                         
                             # AI Physical Disconnect Command Handler
                             if "[HANGUP]" in full_response:
+                                _hangup_requested[0] = True
                                 conv_logger.info("[COMMAND] LLM explicitly commanded a websocket disconnect.")
                                 if stream_sid:
                                     call_logger.call_event(stream_sid, "LLM_HANGUP", "AI explicitly ended the call block.")
