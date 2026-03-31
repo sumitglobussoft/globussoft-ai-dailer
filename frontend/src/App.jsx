@@ -529,21 +529,28 @@ export default function App() {
 
         ws.onclose = () => {
           stream.getTracks().forEach(track => track.stop());
-          // Stop recording and upload
+
+          // Upload whatever recording chunks we have
+          const uploadRecording = async () => {
+            if (recordedChunks.length > 0) {
+              const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+              const formData = new FormData();
+              formData.append('file', blob, `call_${lead.id}_${Date.now()}.webm`);
+              formData.append('lead_id', String(lead.id));
+              try {
+                await apiFetch(`${API_URL}/upload-recording`, { method: 'POST', body: formData });
+              } catch(e) { console.error('Recording upload failed:', e); }
+            }
+          };
+
           if (mediaRecorder.state !== 'inactive') {
             mediaRecorder.stop();
-            mediaRecorder.onstop = async () => {
-              if (recordedChunks.length > 0) {
-                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                const formData = new FormData();
-                formData.append('file', blob, `call_${lead.id}_${Date.now()}.webm`);
-                formData.append('lead_id', String(lead.id));
-                try {
-                  await apiFetch(`${API_URL}/upload-recording`, { method: 'POST', body: formData });
-                } catch(e) { console.error('Recording upload failed:', e); }
-              }
-            };
+            mediaRecorder.onstop = () => uploadRecording();
+          } else {
+            // MediaRecorder already stopped — upload whatever chunks we collected
+            uploadRecording();
           }
+
           if (webCallAudioCtxRef.current) webCallAudioCtxRef.current.close();
           setWebCallActive(null);
         };
