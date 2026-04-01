@@ -131,7 +131,8 @@ async def handle_media_stream(websocket: WebSocket):
     _llm_lock = asyncio.Lock()
     _hangup_requested = [False]  # mutable flag to block new transcripts after [HANGUP]
     _last_transcript_time = [0.0]
-    _debounce_delay = 0.35  # 350ms debounce — wait for user to finish speaking
+    _debounce_delay = 0.8  # 800ms debounce — wait for user to fully finish speaking
+    _last_tts_end_time = [0.0]  # Track when TTS last finished, to give user breathing room
     _recording_mic_chunks = []
     _recording_tts_chunks = []
 
@@ -244,6 +245,14 @@ async def handle_media_stream(websocket: WebSocket):
                 try:
                     t_start = time.time()
                     _last_transcript_time[0] = t_start
+
+                    # If TTS just finished/was cancelled, give user extra time to speak
+                    time_since_tts = t_start - _last_tts_end_time[0]
+                    if time_since_tts < 1.5:
+                        extra_wait = 1.5 - time_since_tts
+                        logging.getLogger("uvicorn.error").info(f"[DEBOUNCE] TTS just ended {time_since_tts:.1f}s ago, waiting extra {extra_wait:.1f}s")
+                        await asyncio.sleep(extra_wait)
+
                     await asyncio.sleep(_debounce_delay)
                     if _last_transcript_time[0] != t_start:
                         logging.getLogger("uvicorn.error").info("[DEBOUNCE] Skipping older transcript — newer one pending.")
@@ -298,16 +307,17 @@ async def handle_media_stream(websocket: WebSocket):
                                     if sentence is None:
                                         break
                                     await synthesize_and_send_audio(
-                                        text=sentence, 
-                                        stream_sid=stream_sid, 
-                                        websocket=websocket, 
-                                        tts_provider_override=_tts_provider_override, 
-                                        tts_voice_override=_tts_voice_override, 
+                                        text=sentence,
+                                        stream_sid=stream_sid,
+                                        websocket=websocket,
+                                        tts_provider_override=_tts_provider_override,
+                                        tts_voice_override=_tts_voice_override,
                                         tts_language_override=_tts_language_override
                                     )
+                                    _last_tts_end_time[0] = time.time()
                                     tts_queue.task_done()
                             except asyncio.CancelledError:
-                                pass
+                                _last_tts_end_time[0] = time.time()
                             except Exception as e:
                                 conv_logger.error(f"TTS Worker Error: {e}")
 
