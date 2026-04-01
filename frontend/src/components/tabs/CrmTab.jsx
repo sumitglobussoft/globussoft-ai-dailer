@@ -91,48 +91,7 @@ export default function CrmTab({
         </div>
       )}
 
-      {/* Org Default Voice Settings */}
-      {userRole === 'Admin' && (
-        <div className="glass-panel" style={{padding: '1rem'}}>
-          <div style={{display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap'}}>
-            <span style={{fontSize: '0.8rem', color: '#64748b', fontWeight: 600}}>🔊 Org Default Voice:</span>
-            <select className="form-input" value={activeVoiceProvider}
-              onChange={e => { setActiveVoiceProvider(e.target.value); setActiveVoiceId(INDIAN_VOICES[e.target.value]?.[0]?.id || ''); }}
-              style={{width: 'auto', height: '32px', fontSize: '0.8rem', padding: '4px 8px', minWidth: '100px'}}>
-              <option value="elevenlabs">ElevenLabs</option>
-              <option value="sarvam">Sarvam AI</option>
-              <option value="smallest">Smallest AI</option>
-            </select>
-            <select className="form-input" value={activeVoiceId}
-              onChange={e => setActiveVoiceId(e.target.value)}
-              style={{width: 'auto', height: '32px', fontSize: '0.8rem', padding: '4px 8px', minWidth: '160px'}}>
-              {(INDIAN_VOICES[activeVoiceProvider] || []).map(v => (
-                <option key={v.id} value={v.id}>{v.name}</option>
-              ))}
-            </select>
-            <select className="form-input" value={activeLanguage}
-              onChange={e => setActiveLanguage(e.target.value)}
-              style={{width: 'auto', height: '32px', fontSize: '0.8rem', padding: '4px 8px', minWidth: '90px'}}>
-              {INDIAN_LANGUAGES.map(l => (
-                <option key={l.code} value={l.code}>{l.name}</option>
-              ))}
-            </select>
-            <button style={{background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', border: 'none', color: '#fff', fontSize: '0.75rem', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap'}}
-              onClick={async () => {
-                if (!selectedOrg) return;
-                await apiFetch(`${API_URL}/organizations/${selectedOrg.id}/voice-settings`, {
-                  method: 'PUT', headers: {'Content-Type': 'application/json'},
-                  body: JSON.stringify({ tts_provider: activeVoiceProvider, tts_voice_id: activeVoiceId, tts_language: activeLanguage })
-                });
-                const vName = (INDIAN_VOICES[activeVoiceProvider] || []).find(v => v.id === activeVoiceId)?.name || activeVoiceId;
-                setSavedVoiceName(vName);
-              }}>💾 Save Default</button>
-            {savedVoiceName && (
-              <span style={{fontSize: '0.75rem', color: '#a78bfa'}}>✅ {savedVoiceName}</span>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Voice settings moved to per-campaign settings */}
     </div>
   );
 }
