@@ -242,7 +242,15 @@ export default function SettingsTab({
                 return (
                 <div key={p.id} style={{background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '1.25rem', border: '1px solid rgba(255,255,255,0.05)'}}>
                   <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
-                    <span style={{fontWeight: 700, fontSize: '1.05rem', color: '#e2e8f0'}}>{p.name}</span>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '8px', flex: 1}}>
+                      <input className="form-input" defaultValue={p.name}
+                        onBlur={e => { if (e.target.value.trim() && e.target.value !== p.name) handleSaveProduct(p.id, { name: e.target.value.trim() }); }}
+                        style={{fontWeight: 700, fontSize: '1.05rem', color: '#e2e8f0', background: 'transparent', border: '1px solid transparent', borderRadius: '6px', padding: '4px 8px', maxWidth: '400px'}}
+                        onFocus={e => e.target.style.borderColor = 'rgba(34,211,238,0.4)'}
+                        onMouseOut={e => { if (document.activeElement !== e.target) e.target.style.borderColor = 'transparent'; }}
+                      />
+                      <span style={{color: '#64748b', fontSize: '0.7rem'}}>click to edit</span>
+                    </div>
                     <button style={{background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.85rem'}}
                       onClick={() => handleDeleteProduct(p.id)}>🗑️ Remove</button>
                   </div>
@@ -260,78 +268,90 @@ export default function SettingsTab({
                     </button>
                   </div>
 
-                  {p.scraped_info && (
-                    <div style={{marginBottom: '1rem'}}>
-                      <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, color: '#22d3ee', fontSize: '0.85rem'}}>📄 AI-Extracted Info</label>
-                      <div style={{background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px',
-                        border: '1px solid rgba(34, 211, 238, 0.15)', whiteSpace: 'pre-wrap',
-                        color: '#cbd5e1', fontSize: '0.85rem', lineHeight: 1.5, maxHeight: '200px', overflowY: 'auto'}}>
-                        {p.scraped_info}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem'}}>📝 Manual Notes</label>
-                    <textarea className="form-input" rows={3} placeholder="Pricing, USPs, objection handling..."
-                      defaultValue={p.manual_notes}
-                      onBlur={e => handleSaveProduct(p.id, { manual_notes: e.target.value })}
-                      style={{resize: 'vertical', minHeight: '70px', fontSize: '0.85rem'}} />
-                  </div>
-
-                  {/* Per-Product Agent Persona & Call Flow */}
-                  <div style={{marginTop: '1rem'}}>
+                  {/* Collapsible: All product details */}
+                  <div style={{marginTop: '0.5rem'}}>
                     <button
                       onClick={() => updateProductPrompt(p.id, 'expanded', !pp.expanded)}
                       style={{
-                        background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)',
-                        color: '#a78bfa', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer',
+                        background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.2)',
+                        color: '#22d3ee', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
                         fontSize: '0.85rem', fontWeight: 600, width: '100%', textAlign: 'left'
                       }}>
-                      {pp.expanded ? '▾' : '▸'} 🎭 Agent Persona & Call Flow
+                      {pp.expanded ? '▾' : '▸'} Product Details, Persona & Call Flow
+                      {p.scraped_info ? ' ✅' : ''}
+                      {pp.agent_persona ? ' 🎭' : ''}
                     </button>
 
                     {pp.expanded && (
-                      <div style={{marginTop: '12px', padding: '12px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', border: '1px solid rgba(167,139,250,0.1)'}}>
-                        {(p.scraped_info || p.manual_notes) && (
-                          <div style={{marginBottom: '1rem'}}>
-                            <button className="btn-primary"
-                              style={{background: 'linear-gradient(135deg, #818cf8, #6366f1)', fontSize: '0.85rem', padding: '8px 16px', width: '100%'}}
-                              disabled={pp.generatingPersona}
-                              onClick={() => handleGeneratePersona(p.id)}>
-                              {pp.generatingPersona ? '⏳ Generating from website info...' : '✨ Auto-Generate Persona & Call Flow from Website'}
-                            </button>
+                      <div style={{marginTop: '12px', padding: '14px', background: 'rgba(0,0,0,0.15)', borderRadius: '8px', border: '1px solid rgba(34,211,238,0.1)'}}>
+
+                        {/* AI-Extracted Info */}
+                        {p.scraped_info && (
+                          <div style={{marginBottom: '1.25rem'}}>
+                            <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, color: '#22d3ee', fontSize: '0.85rem'}}>📄 AI-Extracted Info</label>
+                            <div style={{background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px',
+                              border: '1px solid rgba(34, 211, 238, 0.15)', whiteSpace: 'pre-wrap',
+                              color: '#cbd5e1', fontSize: '0.85rem', lineHeight: 1.5, maxHeight: '200px', overflowY: 'auto'}}>
+                              {p.scraped_info}
+                            </div>
                           </div>
                         )}
-                        <div style={{marginBottom: '1rem'}}>
-                          <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#a78bfa'}}>🎭 Agent Persona</label>
-                          <textarea className="form-input" rows={4}
-                            value={pp.agent_persona}
-                            onChange={e => updateProductPrompt(p.id, 'agent_persona', e.target.value)}
-                            placeholder="e.g. You are Meera, a professional sales agent..."
-                            style={{resize: 'vertical', minHeight: '80px', fontSize: '0.85rem', lineHeight: 1.6}} />
+
+                        {/* Manual Notes */}
+                        <div style={{marginBottom: '1.25rem'}}>
+                          <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem'}}>📝 Manual Notes</label>
+                          <textarea className="form-input" rows={3} placeholder="Pricing, USPs, objection handling..."
+                            defaultValue={p.manual_notes}
+                            onBlur={e => handleSaveProduct(p.id, { manual_notes: e.target.value })}
+                            style={{resize: 'vertical', minHeight: '70px', fontSize: '0.85rem'}} />
                         </div>
-                        <div style={{marginBottom: '1rem'}}>
-                          <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#22d3ee'}}>📋 Call Flow Instructions</label>
-                          <textarea className="form-input" rows={5}
-                            value={pp.call_flow_instructions}
-                            onChange={e => updateProductPrompt(p.id, 'call_flow_instructions', e.target.value)}
-                            placeholder="e.g. Step 1: Greet. Step 2: Qualify..."
-                            style={{resize: 'vertical', minHeight: '100px', fontSize: '0.85rem', lineHeight: 1.6}} />
-                        </div>
-                        <div style={{display: 'flex', gap: '10px'}}>
-                          <button className="btn-primary"
-                            style={{background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.85rem', padding: '8px 16px'}}
-                            disabled={pp.generating}
-                            onClick={() => handleGenerateProductPrompt(p.id)}>
-                            {pp.generating ? '⏳ Generating...' : '🤖 Generate Prompt'}
-                          </button>
-                          <button className="btn-primary"
-                            style={{background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '0.85rem', padding: '8px 16px'}}
-                            disabled={pp.saving}
-                            onClick={() => handleSaveProductPrompt(p.id)}>
-                            {pp.saving ? '⏳ Saving...' : '💾 Save Persona & Flow'}
-                          </button>
+
+                        <div style={{borderTop: '1px solid rgba(255,255,255,0.06)', margin: '1rem 0', paddingTop: '1rem'}}>
+                          {(p.scraped_info || p.manual_notes) && (
+                            <div style={{marginBottom: '1rem'}}>
+                              <button className="btn-primary"
+                                style={{background: 'linear-gradient(135deg, #818cf8, #6366f1)', fontSize: '0.85rem', padding: '8px 16px', width: '100%'}}
+                                disabled={pp.generatingPersona}
+                                onClick={() => handleGeneratePersona(p.id)}>
+                                {pp.generatingPersona ? '⏳ Generating from website info...' : '✨ Auto-Generate Persona & Call Flow from Website'}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Agent Persona */}
+                          <div style={{marginBottom: '1rem'}}>
+                            <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#a78bfa'}}>🎭 Agent Persona</label>
+                            <textarea className="form-input" rows={4}
+                              value={pp.agent_persona}
+                              onChange={e => updateProductPrompt(p.id, 'agent_persona', e.target.value)}
+                              placeholder="e.g. You are Meera, a professional sales agent..."
+                              style={{resize: 'vertical', minHeight: '80px', fontSize: '0.85rem', lineHeight: 1.6}} />
+                          </div>
+
+                          {/* Call Flow */}
+                          <div style={{marginBottom: '1rem'}}>
+                            <label style={{display: 'block', marginBottom: '6px', fontWeight: 600, fontSize: '0.85rem', color: '#22d3ee'}}>📋 Call Flow Instructions</label>
+                            <textarea className="form-input" rows={5}
+                              value={pp.call_flow_instructions}
+                              onChange={e => updateProductPrompt(p.id, 'call_flow_instructions', e.target.value)}
+                              placeholder="e.g. Step 1: Greet. Step 2: Qualify..."
+                              style={{resize: 'vertical', minHeight: '100px', fontSize: '0.85rem', lineHeight: 1.6}} />
+                          </div>
+
+                          <div style={{display: 'flex', gap: '10px'}}>
+                            <button className="btn-primary"
+                              style={{background: 'linear-gradient(135deg, #f59e0b, #d97706)', fontSize: '0.85rem', padding: '8px 16px'}}
+                              disabled={pp.generating}
+                              onClick={() => handleGenerateProductPrompt(p.id)}>
+                              {pp.generating ? '⏳ Generating...' : '🤖 Generate Prompt'}
+                            </button>
+                            <button className="btn-primary"
+                              style={{background: 'linear-gradient(135deg, #10b981, #059669)', fontSize: '0.85rem', padding: '8px 16px'}}
+                              disabled={pp.saving}
+                              onClick={() => handleSaveProductPrompt(p.id)}>
+                              {pp.saving ? '⏳ Saving...' : '💾 Save Persona & Flow'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
