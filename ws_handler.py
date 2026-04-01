@@ -131,7 +131,7 @@ async def handle_media_stream(websocket: WebSocket):
     _llm_lock = asyncio.Lock()
     _hangup_requested = [False]  # mutable flag to block new transcripts after [HANGUP]
     _last_transcript_time = [0.0]
-    _debounce_delay = 0.8  # 800ms debounce — wait for user to fully finish speaking
+    _debounce_delay = 0.3  # 300ms debounce — balance between speed and not cutting user off
     _last_tts_end_time = [0.0]  # Track when TTS last finished, to give user breathing room
     _recording_mic_chunks = []
     _recording_tts_chunks = []
@@ -246,11 +246,10 @@ async def handle_media_stream(websocket: WebSocket):
                     t_start = time.time()
                     _last_transcript_time[0] = t_start
 
-                    # If TTS just finished/was cancelled, give user extra time to speak
+                    # If TTS just finished/was cancelled, brief cooldown so user can speak
                     time_since_tts = t_start - _last_tts_end_time[0]
-                    if time_since_tts < 1.5:
-                        extra_wait = 1.5 - time_since_tts
-                        logging.getLogger("uvicorn.error").info(f"[DEBOUNCE] TTS just ended {time_since_tts:.1f}s ago, waiting extra {extra_wait:.1f}s")
+                    if time_since_tts < 0.5:
+                        extra_wait = 0.5 - time_since_tts
                         await asyncio.sleep(extra_wait)
 
                     await asyncio.sleep(_debounce_delay)
@@ -437,7 +436,7 @@ async def handle_media_stream(websocket: WebSocket):
             encoding="linear16",
             sample_rate=8000,
             channels=1,
-            endpointing=500,          # 500ms VAD — let user pause naturally mid-sentence
+            endpointing=300,          # 300ms VAD — fast response while still catching natural pauses
             utterance_end_ms="1000",  # Force utterance generation
             interim_results=True,     # Fix HTTP 400 deepgram crash
         )
