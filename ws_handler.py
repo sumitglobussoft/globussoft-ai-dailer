@@ -436,6 +436,17 @@ async def handle_media_stream(websocket: WebSocket):
     ws_logger = logging.getLogger("uvicorn.error")
     ws_logger.info(f"Media stream handler started for {lead_name}")
     greeting_sent = False
+    _dg_alive = True
+
+    # Deepgram keepalive: send periodic keepalive to prevent STT timeout during TTS playback
+    async def _deepgram_keepalive():
+        while _dg_alive:
+            await asyncio.sleep(5)
+            try:
+                dg_connection.keep_alive()
+            except Exception:
+                break
+    _keepalive_task = asyncio.create_task(_deepgram_keepalive())
 
     # CRITICAL: Send greeting immediately on WebSocket connect
     # Exotel VoiceBot has a 10-second timeout — if we don't send audio, it kills the session
@@ -638,6 +649,8 @@ async def handle_media_stream(websocket: WebSocket):
             del _tts_recording_buffers[stream_sid]
         if stream_sid and stream_sid in twilio_websockets:
             del twilio_websockets[stream_sid]
+        _dg_alive = False
+        _keepalive_task.cancel()
         try:
             dg_connection.finish()
         except Exception:
