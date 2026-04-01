@@ -340,10 +340,11 @@ async def handle_media_stream(websocket: WebSocket):
                             current_sentence = ""
                             first_token_time = None
                             
+                            _llm_max_tokens = 60 if "[LANG:mr]" in dynamic_context else 150
                             async for chunk in llm_provider.generate_response_stream(
                                 chat_history=chat_history,
                                 system_instruction=final_system_instruction,
-                                max_tokens=150,
+                                max_tokens=_llm_max_tokens,
                             ):
                                 if first_token_time is None:
                                     first_token_time = time.time()
