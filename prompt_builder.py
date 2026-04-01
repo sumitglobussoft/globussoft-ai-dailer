@@ -169,7 +169,7 @@ def build_call_context(
             f"\n## LANGUAGE STYLE\n"
             f"- CASUAL HINGLISH only. Jaise real salesman bolta hai.\n"
             f"- English words naturally mix karo: project, flat, location, price, visit, meeting, details, BHK\n"
-            f"- Yeh KABHI mat bolo: 'विलासिता', 'आलीशान', 'रुचि', 'आयोजन', 'विशाल', 'हवादार', 'उपलब्ध', 'सुविधा'\n"
+            f"- BANNED WORDS (use English instead): 'उपलब्ध'→'available', 'विलासिता'→'luxury', 'आलीशान'→'premium', 'रुचि'→'interest', 'आयोजन'→'arrange', 'विशाल'→'spacious', 'सुविधा'→'facility'\n"
             f"- Jaise dost ko phone pe baat kar rahe ho.\n"
             f"{pronunciation_ctx}"
             f"{product_ctx}"
@@ -233,7 +233,7 @@ def build_call_context(
             f"- [HANGUP] to end call.\n"
             f"\n## LANGUAGE: CASUAL HINGLISH\n"
             f"- Jaise dost ko phone pe baat karo. English words naturally mix karo.\n"
-            f"- BANNED: 'विलासिता', 'आलीशान', 'रुचि', 'आयोजन', 'विशाल', 'हवादार', 'उपलब्ध'\n"
+            f"- BANNED WORDS (use English instead): 'उपलब्ध'→'available', 'विलासिता'→'luxury', 'आलीशान'→'premium', 'रुचि'→'interest', 'आयोजन'→'arrange', 'विशाल'→'spacious', 'हवादार'→'airy', 'सुविधा'→'facility'\n"
             f"{pronunciation_ctx}"
             f"{product_ctx}"
         )
