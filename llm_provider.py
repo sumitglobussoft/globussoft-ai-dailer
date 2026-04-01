@@ -144,14 +144,19 @@ async def generate_response(chat_history: list, system_instruction: str, max_tok
     """
     Generate LLM response using the configured provider.
     Falls back to Gemini if Groq hits rate limits.
+    Forces Gemini for Marathi ([LANG:mr]) since Groq Llama 3.3 lacks Marathi support.
 
     Returns the response text string.
     Raises on error (caller should handle).
     """
     provider = LLM_PROVIDER
+    # Force Gemini-first for Marathi — Groq Llama 3.3 doesn't support Marathi well
+    _force_gemini = "[LANG:mr]" in system_instruction
+    if _force_gemini:
+        logger.info("[LLM] Marathi detected — forcing Gemini-first")
     logger.info(f"[LLM] Using provider: {provider}")
 
-    if "groq" in provider or "groc" in provider:
+    if not _force_gemini and ("groq" in provider or "groc" in provider):
         # If explicitly told to strictly use Groq, don't default to Gemini first
         try:
             return await _groq_generate(chat_history, system_instruction, max_tokens)
@@ -170,11 +175,16 @@ async def generate_response(chat_history: list, system_instruction: str, max_tok
 async def generate_response_stream(chat_history: list, system_instruction: str, max_tokens: int = 150):
     """
     Generate LLM response using an async generator for streaming tokens.
+    Forces Gemini for Marathi ([LANG:mr]) since Groq Llama 3.3 lacks Marathi support.
     """
     provider = LLM_PROVIDER
+    # Force Gemini-first for Marathi
+    _force_gemini = "[LANG:mr]" in system_instruction
+    if _force_gemini:
+        logger.info("[LLM STREAM] Marathi detected — forcing Gemini-first")
     logger.info(f"[LLM STREAM] Using provider: {provider}")
 
-    if "groq" in provider or "groc" in provider:
+    if not _force_gemini and ("groq" in provider or "groc" in provider):
         try:
             async for chunk in _groq_generate_stream(chat_history, system_instruction, max_tokens):
                 yield chunk

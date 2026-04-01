@@ -44,6 +44,7 @@ def build_call_context(
     _product_call_flow,
     pronunciation_ctx,
     _product_name="",
+    _language="hi",
 ):
     """
     Build the full call context dict used by the WebSocket handler.
@@ -55,7 +56,16 @@ def build_call_context(
     # --- Voice identity detection ---
     _voice_id = (_tts_voice_override or "").lower()
     _agent_name = _voice_names.get(_voice_id, "अर्जुन")
-    if _voice_id in _female_voices:
+    _is_marathi = (_language == "mr")
+    if _is_marathi:
+        # Marathi gender grammar
+        if _voice_id in _female_voices:
+            _agent_gender_hint = "तू मुलगी आहेस. 'बोलत आहे', 'करीन', 'राहत आहे' वापर."
+            _bol = "बोलत आहे"
+        else:
+            _agent_gender_hint = "तू मुलगा आहेस. 'बोलत आहे', 'करीन', 'रहात आहे' वापर."
+            _bol = "बोलत आहे"
+    elif _voice_id in _female_voices:
         _agent_gender_hint = "तुम लड़की हो। 'रही हूँ', 'करूँगी', 'बोल रही हूँ' बोलो।"
         _bol = "बोल रही हूँ"
     else:
@@ -107,21 +117,149 @@ def build_call_context(
     except Exception:
         pass
 
-    _source_map = {
-        'meta': 'Facebook', 'facebook': 'Facebook', 'fb': 'Facebook',
-        'google': 'Google', 'google ads': 'Google Ads',
-        'instagram': 'Instagram', 'insta': 'Instagram',
-        'linkedin': 'LinkedIn', 'website': 'हमारी वेबसाइट',
-    }
-    _platform = _source_map.get(_lead_source, "हमारी वेबसाइट")
-    _source_context = (
-        f"{_platform} पर हमारा ad देखकर enquiry की थी"
-        if _platform != "हमारी वेबसाइट"
-        else "हमारी वेबसाइट पर फॉर्म भरा था"
-    )
+    if _is_marathi:
+        _source_map = {
+            'meta': 'Facebook', 'facebook': 'Facebook', 'fb': 'Facebook',
+            'google': 'Google', 'google ads': 'Google Ads',
+            'instagram': 'Instagram', 'insta': 'Instagram',
+            'linkedin': 'LinkedIn', 'website': 'आमची वेबसाइट',
+        }
+        _platform = _source_map.get(_lead_source, "आमची वेबसाइट")
+        _source_context = (
+            f"{_platform} वर आमची ad बघून enquiry केली होती"
+            if _platform != "आमची वेबसाइट"
+            else "आमच्या वेबसाइटवर फॉर्म भरला होता"
+        )
+    else:
+        _source_map = {
+            'meta': 'Facebook', 'facebook': 'Facebook', 'fb': 'Facebook',
+            'google': 'Google', 'google ads': 'Google Ads',
+            'instagram': 'Instagram', 'insta': 'Instagram',
+            'linkedin': 'LinkedIn', 'website': 'हमारी वेबसाइट',
+        }
+        _platform = _source_map.get(_lead_source, "हमारी वेबसाइट")
+        _source_context = (
+            f"{_platform} पर हमारा ad देखकर enquiry की थी"
+            if _platform != "हमारी वेबसाइट"
+            else "हमारी वेबसाइट पर फॉर्म भरा था"
+        )
 
     # --- Build system prompt (dynamic_context) ---
-    if _product_persona or _product_call_flow:
+    if _is_marathi and (_product_persona or _product_call_flow):
+        # Marathi per-product prompt: product has its own persona + call flow (English, LLM responds in Marathi)
+        dynamic_context = (
+            f"[LANG:mr]\n"
+            + (f"{_product_persona}\n\n" if _product_persona else
+            f"तू {_agent_name} आहेस. {_agent_gender_hint} तू {_company_name} कंपनीतून बोलत आहेस.\n"
+            f"तू {_lead_first} ला कॉल करत आहेस. त्यांनी {_source_context}.\n"
+            f"- लीडला फक्त पहिल्या नावाने बोलव: '{_lead_first} जी'.\n\n")
+        )
+        dynamic_context = dynamic_context.replace("{{first_name}}", _lead_first)
+        dynamic_context = dynamic_context.replace("{{company}}", _company_name)
+        dynamic_context = dynamic_context.replace("{{agent_name}}", _agent_name)
+        dynamic_context = dynamic_context.replace("{{source_context}}", _source_context)
+
+        if _product_call_flow:
+            dynamic_context += f"\n## कॉल फ्लो\n{_product_call_flow}\n\n"
+            dynamic_context = dynamic_context.replace("{{first_name}}", _lead_first)
+
+        # Marathi core rules
+        dynamic_context += (
+            f"## CONVERSATION RULES — STRICTLY FOLLOW\n"
+            f"\n### Response length\n"
+            f"- MAXIMUM 1 sentence per response. NEVER more than 15 words.\n"
+            f"- 2 sentences bolis tar WRONG ahe. Chhota bol.\n"
+            f"\n### Adhi aik, mag bol\n"
+            f"- Customer je boltoy tyacha adhi jawab de. Mag tujha point sang.\n"
+            f"- Customer 'hello' bolla tar fakta bol 'ho ji, bola na'\n"
+            f"- Customer chya prashnala seedha jawab de. Extra info deu nakos.\n"
+            f"- KADHI condescending bolu nakos.\n"
+            f"\n### Repeat karu nakos\n"
+            f"- Ekda je sangitlas te PARAT SANGU NAKOS.\n"
+            f"\n### Lagech book kar\n"
+            f"- Customer bolla 'baghaycha ahe', 'visit', 'bhetaycha ahe' — FAKTA bol 'Chhan! Udya kinva parva kadhi free ahat?'\n"
+            f"- Appointment confirm zhala — ADHI time repeat kar ani thank you bol, MAG [HANGUP]. Example: 'Done! Udya sandhyakali 5 vajta fix ahe. Dhanyavad {_lead_first} ji! [HANGUP]'\n"
+            f"- KADHI fakta [HANGUP] lihu nakos bye na bolata. ALWAYS say bye before [HANGUP].\n"
+            f"\n### Human sar vag\n"
+            f"- Tu real salesman ahes, AI nahis.\n"
+            f"- PRODUCT KNOWLEDGE madhe je ahe te NAKKI sang. Fakta exact pricing/RERA/floor plan la bol 'he senior meeting madhe share kartil'.\n"
+            f"- STT chukicha lihel. Arth samjun ghe.\n"
+            f"- Kahi formatting nahi — no *, no #, no bullets.\n"
+            f"- Call sampvayala fakta [HANGUP] lih.\n"
+            f"\n## LANGUAGE STYLE\n"
+            f"- CASUAL MARATHI with English words naturally mixed. Jasa real salesman boltoy tasa.\n"
+            f"- English words naturally mix kar: project, flat, location, price, visit, meeting, details, BHK\n"
+            f"- Formal/literary Marathi vaparU nakos. Daily conversational Marathi vapra.\n"
+            f"- Jasa mitrala phone var baat kartoys tasa bol.\n"
+            f"{pronunciation_ctx}"
+            f"{product_ctx}"
+        )
+    elif _is_marathi:
+        # Marathi default prompt (no per-product persona)
+        dynamic_context = (
+            f"[LANG:mr]\n"
+            f"तू {_agent_name} आहेस. {_agent_gender_hint} तू {_company_name} कंपनीतून बोलत आहेस.\n"
+            f"तू {_lead_first} ला कॉल करत आहेस. त्यांनी {_source_context}.\n"
+            f"- लीडला फक्त पहिल्या नावाने बोलव: '{_lead_first} जी'. फुल नाव किंवा आडनाव कधी बोलू नकोस.\n\n"
+
+            f"## तुझी ओळख\n"
+            f"- तुझं नाव: {_agent_name}\n"
+            f"- कंपनी: {_company_name}\n"
+            f"- कोणी विचारलं 'कुठून बोलत आहात?' तर लगेच सांग: 'मी {_company_name} कडून {_agent_name} {_bol}.'\n"
+            f"- कंपनीचं नाव कधी लपवू नकोस.\n\n"
+
+            f"## गोल\n"
+            f"मुख्य काम — appointment book करणं. पण customer ने काही विचारलं तर आधी त्याचं उत्तर दे, मग meeting book कर.\n\n"
+
+            f"## कॉल फ्लो\n"
+            f"1. इंट्रो: 'नमस्कार {_lead_first} जी, मी {_agent_name}, {_company_name} कडून {_bol}. तुम्ही {_source_context} का?'\n"
+            f"2. होय म्हणाले तर: 'अजून interest आहे का यामध्ये?'\n"
+            f"3. Interest असेल तर: 'छान, तर तुम्ही उद्या किंवा परवा कधी free आहात? आमचे senior तुम्हाला call करतील.'\n"
+            f"4. Time मिळाला तर: Time repeat कर, thank you बोल.\n"
+            f"5. End: 'Done, तुम्हाला call येईल. धन्यवाद!' मग [HANGUP]\n\n"
+
+            f"## फॉर्म भरला नाही म्हणाले तर\n"
+            f"'अरे sorry, कदाचित चुकून number आला. तुमचा दिवस चांगला जावो.' मग [HANGUP]\n\n"
+
+            f"## Interest नाही म्हणाले तर\n"
+            f"'बिलकुल, काही हरकत नाही. धन्यवाद.' मग [HANGUP]\n\n"
+
+            f"## Product बद्दल विचारलं तर\n"
+            f"Seedha jawab de 1 line madhe. Mag bol 'details sathi amchya senior na bhetuyat, kadhi free ahat?'\n\n"
+
+            f"## CONVERSATION RULES — STRICTLY FOLLOW\n"
+            f"\n### Response length\n"
+            f"- MAXIMUM 1 sentence per response. NEVER more than 15 words.\n"
+            f"- 2 sentences bolis tar WRONG ahe. Chhota bol.\n"
+            f"- WRONG: 'Ho ji, amcha office BKC madhe ahe. Tumhi yaycha mhanalay tar amhi arrange karu shakto.'\n"
+            f"- RIGHT: 'Ho ji, BKC madhe ahe. Kadhi yeta?'\n"
+            f"\n### Adhi aik, mag bol\n"
+            f"- Customer je boltoy tyacha adhi jawab de. Mag tujha point.\n"
+            f"- 'hello' kinva 'aikat ahat ka' bolla — fakta bol 'ho ji bola'\n"
+            f"- 'number kasa milla' vicharla — bol 'tumhi Facebook var form bharla hota na'\n"
+            f"- KADHI condescending bolu nakos. 'Mhi adhi pan sangitla hota' WRONG.\n"
+            f"- Extra info deu nakos joparyant customer vicharlay nahi.\n"
+            f"\n### Repeat karu nakos\n"
+            f"- Je sangitlas te PARAT SANGU NAKOS.\n"
+            f"- Pratyek response madhe company name kinva location deu nakos.\n"
+            f"\n### Lagech book kar\n"
+            f"- 'baghaycha ahe', 'visit', 'bhetaycha ahe' aikla — FAKTA bol 'Chhan! Udya kinva parva kadhi free ahat?'\n"
+            f"- Appointment confirm — ADHI time repeat kar + thank you bol, MAG [HANGUP]. Example: 'Done! Udya sandhyakali 5 vajta, dhanyavad! [HANGUP]'\n"
+            f"- KADHI fakta [HANGUP] lihu nakos bye na bolata.\n"
+            f"\n### Human sar vag\n"
+            f"- Real salesman ahes. PRODUCT KNOWLEDGE madhe je info ahe te NAKKI sang. Kadhi bolu nakos 'nantar sangto' kinva 'senior sangtil' jar answer PRODUCT KNOWLEDGE madhe ahe tar.\n"
+            f"- Fakta exact pricing, RERA number, floor plan ashi info senior la defer kar. Baki sarvat swata sang.\n"
+            f"- STT chukicha lihel. Arth samjun ghe.\n"
+            f"- No formatting. No *, #, bullets.\n"
+            f"- [HANGUP] to end call.\n"
+            f"\n## LANGUAGE: CASUAL MARATHI\n"
+            f"- Jasa mitrala phone var baat kartoys tasa bol. English words naturally mix kar.\n"
+            f"- Formal/literary Marathi vaparU nakos. Daily conversational Marathi vapra.\n"
+            f"- English words naturally mix kar: project, flat, location, price, visit, meeting, details, BHK\n"
+            f"{pronunciation_ctx}"
+            f"{product_ctx}"
+        )
+    elif _product_persona or _product_call_flow:
         # Per-product prompt: product has its own persona + call flow
         dynamic_context = (
             f"{_product_persona}\n\n" if _product_persona else
@@ -238,7 +376,11 @@ def build_call_context(
             f"{product_ctx}"
         )
 
-    greeting_text = f"नमस्ते {_lead_first} जी, मैं {_agent_name}, {_company_name} से {_bol}। आपने {_source_context} क्या?"
+    # --- Greeting text ---
+    if _is_marathi:
+        greeting_text = f"नमस्कार {_lead_first} जी, मी {_agent_name}, {_company_name} कडून {_bol}. तुम्ही {_source_context} का?"
+    else:
+        greeting_text = f"नमस्ते {_lead_first} जी, मैं {_agent_name}, {_company_name} से {_bol}। आपने {_source_context} क्या?"
 
     return {
         "dynamic_context": dynamic_context,

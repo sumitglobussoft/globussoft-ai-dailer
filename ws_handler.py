@@ -196,6 +196,7 @@ async def handle_media_stream(websocket: WebSocket):
         _product_call_flow=_product_call_flow,
         pronunciation_ctx=pronunciation_ctx,
         _product_name=_product_name,
+        _language=(_tts_language_override or "hi"),
     )
     dynamic_context = _ctx["dynamic_context"]
     _agent_name = _ctx["_agent_name"]
@@ -431,7 +432,7 @@ async def handle_media_stream(websocket: WebSocket):
     dg_connection.start(
         LiveOptions(
             model="nova-2",
-            language="hi",
+            language=(_tts_language_override or "hi"),
             encoding="linear16",
             sample_rate=8000,
             channels=1,
