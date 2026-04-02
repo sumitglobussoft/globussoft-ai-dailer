@@ -9,7 +9,7 @@ import OpsPage from './pages/OpsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import WhatsAppPage from './pages/WhatsAppPage';
 import IntegrationsPage from './pages/IntegrationsPage';
-import SettingsTab from './components/tabs/SettingsTab';
+import SettingsPage from './pages/SettingsPage';
 import LogsPage from './pages/LogsPage';
 import CheckInPage from './pages/CheckInPage';
 import CampaignsTab from './components/tabs/CampaignsTab';
@@ -132,9 +132,7 @@ export default function App() {
   // GenAI Email Modal State
   const [emailDraft, setEmailDraft] = useState(null);
 
-  // Pronunciation Guide State
-  const [pronunciations, setPronunciations] = useState([]);
-  const [pronFormData, setPronFormData] = useState({ word: '', phonetic: '' });
+  // Pronunciation Guide State — moved to SettingsPage
 
   // Call Transcript State
   const [transcriptLead, setTranscriptLead] = useState(null);
@@ -145,15 +143,9 @@ export default function App() {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgTimezone, setOrgTimezone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [orgProducts, setOrgProducts] = useState([]);
-  const [scraping, setScraping] = useState(null); // product_id being scraped
+  // scraping, product input, prompt state — moved to SettingsPage
   const [newOrgName, setNewOrgName] = useState('');
   const [showOrgInput, setShowOrgInput] = useState(false);
-  const [newProductName, setNewProductName] = useState('');
-  const [showProductInput, setShowProductInput] = useState(false);
-  const [systemPromptAuto, setSystemPromptAuto] = useState('');
-  const [systemPromptCustom, setSystemPromptCustom] = useState('');
-  const [promptSaving, setPromptSaving] = useState(false);
-  const [promptDirty, setPromptDirty] = useState(false);
   const [activeVoiceProvider, setActiveVoiceProvider] = useState('elevenlabs');
   const [activeVoiceId, setActiveVoiceId] = useState('');
   const [savedVoiceName, setSavedVoiceName] = useState('');
@@ -188,9 +180,7 @@ export default function App() {
     try { const res = await apiFetch(`${API_URL}/campaigns`); setCampaigns(await res.json()); } catch(e){}
   };
 
-  const fetchPronunciations = async () => {
-    try { const res = await apiFetch(`${API_URL}/pronunciation`); setPronunciations(await res.json()); } catch(e){}
-  };
+  // fetchPronunciations — moved to SettingsPage
 
   const fetchOrgs = async () => {
     try {
@@ -213,7 +203,7 @@ export default function App() {
           }).catch(() => {});
         }
         fetchOrgProducts(data[0].id);
-        fetchSystemPrompt(data[0].id);
+        // fetchSystemPrompt — moved to SettingsPage (loads on mount)
         // Load voice settings
         try {
           const vRes = await apiFetch(`${API_URL}/organizations/${data[0].id}/voice-settings`);
@@ -240,7 +230,6 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     fetchLeads();
-    fetchPronunciations();
     fetchCampaigns();
     fetchOrgs();
   }, [currentUser]);
@@ -737,26 +726,7 @@ export default function App() {
 
   // handleCreateIntegration — moved to IntegrationsPage
 
-  const handleAddPronunciation = async (e) => {
-    e.preventDefault();
-    if (!pronFormData.word.trim() || !pronFormData.phonetic.trim()) return;
-    try {
-      await apiFetch(`${API_URL}/pronunciation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pronFormData)
-      });
-      setPronFormData({ word: '', phonetic: '' });
-      fetchPronunciations();
-    } catch(e) { console.error(e); }
-  };
-
-  const handleDeletePronunciation = async (id) => {
-    try {
-      await apiFetch(`${API_URL}/pronunciation/${id}`, { method: 'DELETE' });
-      fetchPronunciations();
-    } catch(e) { console.error(e); }
-  };
+  // handleAddPronunciation, handleDeletePronunciation — moved to SettingsPage
 
   const handleViewTranscripts = async (lead) => {
     setTranscriptLead(lead);
@@ -782,67 +752,12 @@ export default function App() {
 
   const handleSelectOrg = (org) => {
     setSelectedOrg(org);
-    setShowProductInput(false); setNewProductName('');
     fetchOrgProducts(org.id);
-    fetchSystemPrompt(org.id);
   };
 
-  const handleAddProduct = async () => {
-    if (!selectedOrg || !newProductName.trim()) return;
-    await apiFetch(`${API_URL}/organizations/${selectedOrg.id}/products`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ name: newProductName.trim() })
-    });
-    setNewProductName(''); setShowProductInput(false);
-    fetchOrgProducts(selectedOrg.id);
-  };
+  // handleAddProduct — moved to SettingsPage
 
-  const handleScrapeProduct = async (productId) => {
-    setScraping(productId);
-    try {
-      const res = await apiFetch(`${API_URL}/products/${productId}/scrape`, { method: 'POST' });
-      const data = await res.json();
-      if (data.scraped_info) fetchOrgProducts(selectedOrg.id);
-    } catch(e) { console.error(e); }
-    setScraping(null);
-  };
-
-  const handleSaveProduct = async (productId, updates) => {
-    await apiFetch(`${API_URL}/products/${productId}`, {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(updates)
-    });
-    fetchOrgProducts(selectedOrg.id);
-    // Refresh system prompt preview after product update
-    if (selectedOrg) fetchSystemPrompt(selectedOrg.id);
-  };
-
-  const fetchSystemPrompt = async (orgId) => {
-    try {
-      const res = await apiFetch(`${API_URL}/organizations/${orgId}/system-prompt`);
-      const data = await res.json();
-      setSystemPromptAuto(data.auto_generated || '');
-      setSystemPromptCustom(data.custom_prompt || '');
-      setPromptDirty(false);
-    } catch(e) {}
-  };
-
-  const handleSaveSystemPrompt = async () => {
-    if (!selectedOrg) return;
-    setPromptSaving(true);
-    await apiFetch(`${API_URL}/organizations/${selectedOrg.id}/system-prompt`, {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ custom_prompt: systemPromptCustom })
-    });
-    setPromptSaving(false);
-    setPromptDirty(false);
-  };
-
-  const handleDeleteProduct = async (productId) => {
-    if (!confirm('Delete this product?')) return;
-    await apiFetch(`${API_URL}/products/${productId}`, { method: 'DELETE' });
-    fetchOrgProducts(selectedOrg.id);
-  };
+  // handleScrapeProduct, handleSaveProduct, fetchSystemPrompt, handleSaveSystemPrompt, handleDeleteProduct — moved to SettingsPage
 
   // ─── AUTH PAGES (after all hooks) ───
   if (!authToken || !currentUser) {
@@ -911,20 +826,11 @@ export default function App() {
       ) : activeTab === 'sandbox' ? (
         <SandboxPage API_URL={API_URL} />
       ) : activeTab === 'settings' ? (
-        <SettingsTab orgTimezone={orgTimezone}
-          handleAddPronunciation={handleAddPronunciation} pronFormData={pronFormData}
-          setPronFormData={setPronFormData} pronunciations={pronunciations}
-          handleDeletePronunciation={handleDeletePronunciation} selectedOrg={selectedOrg}
-          orgs={orgs} showProductInput={showProductInput} setShowProductInput={setShowProductInput}
-          newProductName={newProductName} setNewProductName={setNewProductName}
-          handleAddProduct={handleAddProduct} orgProducts={orgProducts}
-          handleDeleteProduct={handleDeleteProduct} handleSaveProduct={handleSaveProduct}
-          scraping={scraping} handleScrapeProduct={handleScrapeProduct}
-          promptDirty={promptDirty} handleSaveSystemPrompt={handleSaveSystemPrompt}
-          promptSaving={promptSaving} systemPromptAuto={systemPromptAuto}
-          systemPromptCustom={systemPromptCustom} setSystemPromptCustom={setSystemPromptCustom}
-          setPromptDirty={setPromptDirty}
+        <SettingsPage
           apiFetch={apiFetch} API_URL={API_URL}
+          selectedOrg={selectedOrg} orgs={orgs}
+          orgProducts={orgProducts} orgTimezone={orgTimezone}
+          fetchOrgProducts={fetchOrgProducts}
         />
       ) : activeTab === 'logs' ? (
         <LogsPage API_URL={API_URL} authToken={authToken} />
