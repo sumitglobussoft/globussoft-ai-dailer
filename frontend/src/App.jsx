@@ -18,10 +18,12 @@ import { API_URL } from './constants/api';
 import { INDIAN_VOICES, INDIAN_LANGUAGES } from './constants/voices';
 import { useAuth } from './contexts/AuthContext';
 import { useOrg } from './contexts/OrgContext';
+import { useVoice } from './contexts/VoiceContext';
 
 export default function App() {
   const { authToken, currentUser, apiFetch, logout } = useAuth();
   const { selectedOrg, orgTimezone, orgProducts, orgs, fetchOrgProducts } = useOrg();
+  const { activeVoiceProvider, setActiveVoiceProvider, activeVoiceId, setActiveVoiceId, activeLanguage, setActiveLanguage, savedVoiceName, setSavedVoiceName } = useVoice();
 
   const [activeTab, setActiveTab] = useState('crm');
   const [dialingId, setDialingId] = useState(null);
@@ -31,11 +33,6 @@ export default function App() {
 
   // RBAC Global State
   const userRole = currentUser?.role || 'Agent';
-
-  const [activeVoiceProvider, setActiveVoiceProvider] = useState('elevenlabs');
-  const [activeVoiceId, setActiveVoiceId] = useState('');
-  const [savedVoiceName, setSavedVoiceName] = useState('');
-  const [activeLanguage, setActiveLanguage] = useState('hi');
 
   const [campaigns, setCampaigns] = useState([]);
 

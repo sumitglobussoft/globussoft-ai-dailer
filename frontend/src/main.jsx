@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './contexts/AuthContext'
 import { OrgProvider } from './contexts/OrgContext'
+import { VoiceProvider } from './contexts/VoiceContext'
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null }; }
@@ -29,7 +30,9 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <AuthProvider>
         <OrgProvider>
-          <App />
+          <VoiceProvider>
+            <App />
+          </VoiceProvider>
         </OrgProvider>
       </AuthProvider>
     </ErrorBoundary>
