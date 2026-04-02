@@ -11,7 +11,7 @@ import WhatsAppTab from './components/tabs/WhatsAppTab';
 import IntegrationsPage from './pages/IntegrationsPage';
 import SettingsTab from './components/tabs/SettingsTab';
 import LogsTab from './components/tabs/LogsTab';
-import CheckInTab from './components/tabs/CheckInTab';
+import CheckInPage from './pages/CheckInPage';
 import CampaignsTab from './components/tabs/CampaignsTab';
 import LeadModals from './components/modals/LeadModals';
 import DocumentVault from './components/modals/DocumentVault';
@@ -93,7 +93,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('crm');
   const [leads, setLeads] = useState([]);
-  const [sites, setSites] = useState([]);
+  // sites state — moved to CheckInPage
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dialingId, setDialingId] = useState(null);
@@ -108,9 +108,7 @@ export default function App() {
   const [editingLead, setEditingLead] = useState(null);
   const [editFormData, setEditFormData] = useState({ first_name: '', last_name: '', phone: '', source: '' });
 
-  const [fieldOpsData, setFieldOpsData] = useState({ agent_name: '', site_id: '' });
-  const [punchStatus, setPunchStatus] = useState(null);
-  const [punching, setPunching] = useState(false);
+  // fieldOpsData, punchStatus, punching — moved to CheckInPage
 
   // Workflow State — moved to OpsPage
 
@@ -177,14 +175,7 @@ export default function App() {
     }
   };
 
-  const fetchSites = async () => {
-    try {
-      const res = await apiFetch(`${API_URL}/sites`);
-      setSites(await res.json());
-    } catch (e) {
-      console.error("Could not fetch sites:", e);
-    }
-  };
+  // fetchSites — moved to CheckInPage
 
   // fetchTasks, fetchReports — moved to OpsPage
 
@@ -252,7 +243,6 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     fetchLeads();
-    fetchSites();
     fetchWhatsappLogs();
     fetchPronunciations();
     fetchCampaigns();
@@ -656,42 +646,7 @@ export default function App() {
     } catch(e) { console.error(e); }
   };
 
-  const handlePunchIn = () => {
-    if (!fieldOpsData.agent_name || !fieldOpsData.site_id) {
-      alert("Please enter your name and select a site.");
-      return;
-    }
-    setPunching(true);
-    setPunchStatus(null);
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser");
-      setPunching(false);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      try {
-        const response = await apiFetch(`${API_URL}/punch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agent_name: fieldOpsData.agent_name,
-            site_id: parseInt(fieldOpsData.site_id),
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          })
-        });
-        const data = await response.json();
-        setPunchStatus(data);
-      } catch (e) {
-        setPunchStatus({ status: 'error', message: 'Network error checking in.' });
-      } finally {
-        setPunching(false);
-      }
-    }, (error) => {
-      alert(`Error fetching location: ${error.message}`);
-      setPunching(false);
-    });
-  };
+  // handlePunchIn — moved to CheckInPage
 
   const handleSearch = async (e) => {
     const query = e.target.value;
@@ -985,11 +940,7 @@ export default function App() {
       ) : activeTab === 'logs' ? (
         <LogsTab API_URL={API_URL} authToken={authToken} />
       ) : (
-        <CheckInTab 
-          fieldOpsData={fieldOpsData} setFieldOpsData={setFieldOpsData}
-          sites={sites} handlePunchIn={handlePunchIn} punching={punching}
-          punchStatus={punchStatus}
-        />
+        <CheckInPage apiFetch={apiFetch} API_URL={API_URL} />
       )}
 
       <LeadModals 
