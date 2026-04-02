@@ -57,7 +57,7 @@ wa_router = APIRouter()
 
 class WaSendBody(BaseModel):
     contact_phone: str
-    message: str
+    text: str
     channel_config_id: int
 
 
@@ -80,7 +80,7 @@ class WaConfigUpdate(BaseModel):
 
 
 class WaToggleAI(BaseModel):
-    paused: bool
+    enabled: bool
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -370,7 +370,7 @@ async def send_message(body: WaSendBody, current_user: dict = Depends(get_curren
         contact_name="",
         direction="outbound",
         message_type="text",
-        content=body.message,
+        content=body.text,
         is_ai_generated=False,
         lead_id=lead_id,
     )
@@ -378,7 +378,7 @@ async def send_message(body: WaSendBody, current_user: dict = Depends(get_curren
     # Send via provider
     creds = config.get("credentials", {})
     provider = get_wa_provider(config["provider"], **creds)
-    result = await provider.send_text(body.contact_phone, body.message)
+    result = await provider.send_text(body.contact_phone, body.text)
 
     if result.success:
         logger.info(f"[WA] Manual message sent to {body.contact_phone} by user {current_user.get('email')}")
@@ -469,7 +469,7 @@ async def toggle_ai(contact_phone: str, body: WaToggleAI, current_user: dict = D
     if not org_id:
         raise HTTPException(status_code=400, detail="No org_id on user")
 
-    if body.paused:
+    if not body.enabled:
         wa_agent._set_paused(org_id, contact_phone)
         logger.info(f"[WA] AI paused for {contact_phone} in org {org_id}")
         return {"status": "paused", "contact_phone": contact_phone}
