@@ -273,6 +273,53 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS wa_channel_config (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            org_id INT NOT NULL,
+            provider VARCHAR(50) NOT NULL,
+            phone_number VARCHAR(50) NOT NULL,
+            credentials JSON NOT NULL,
+            default_product_id INT DEFAULT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            webhook_verified BOOLEAN DEFAULT FALSE,
+            auto_reply_enabled BOOLEAN DEFAULT TRUE,
+            welcome_template VARCHAR(255) DEFAULT NULL,
+            business_hours_json JSON DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY org_provider_phone (org_id, provider, phone_number),
+            FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS wa_conversations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            org_id INT NOT NULL,
+            channel_config_id INT NOT NULL,
+            lead_id INT DEFAULT NULL,
+            contact_phone VARCHAR(50) NOT NULL,
+            contact_name VARCHAR(255) DEFAULT NULL,
+            direction ENUM('inbound','outbound') NOT NULL,
+            message_type VARCHAR(50) NOT NULL DEFAULT 'text',
+            content TEXT,
+            media_url TEXT DEFAULT NULL,
+            provider_message_id VARCHAR(255) DEFAULT NULL,
+            is_ai_generated BOOLEAN DEFAULT FALSE,
+            ai_model VARCHAR(100) DEFAULT NULL,
+            status VARCHAR(50) DEFAULT 'sent',
+            metadata JSON DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_org_contact (org_id, contact_phone),
+            INDEX idx_channel (channel_config_id),
+            INDEX idx_lead (lead_id),
+            INDEX idx_created (created_at),
+            FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE CASCADE,
+            FOREIGN KEY (channel_config_id) REFERENCES wa_channel_config (id) ON DELETE CASCADE
+        )
+    ''')
+
     conn.close()
 
 def get_all_leads(org_id: int) -> List[Dict]:
@@ -1227,3 +1274,188 @@ def get_call_review_by_transcript(transcript_id: int) -> Optional[Dict]:
     row = cursor.fetchone()
     conn.close()
     return row
+
+
+# ─── WhatsApp Channel Config ───
+
+def create_wa_channel_config(org_id: int, provider: str, phone_number: str, credentials: dict, default_product_id: int = None) -> int:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO wa_channel_config (org_id, provider, phone_number, credentials, default_product_id) VALUES (%s, %s, %s, %s, %s)",
+        (org_id, provider, phone_number, json.dumps(credentials), default_product_id)
+    )
+    last_id = cursor.lastrowid
+    conn.close()
+    return last_id
+
+
+def get_wa_channel_configs(org_id: int) -> List[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM wa_channel_config WHERE org_id = %s ORDER BY id DESC", (org_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    for r in rows:
+        if isinstance(r.get('credentials'), str):
+            try:
+                r['credentials'] = json.loads(r['credentials'])
+            except Exception:
+                pass
+    return rows
+
+
+def get_wa_channel_config_by_id(config_id: int) -> Optional[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM wa_channel_config WHERE id = %s", (config_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row and isinstance(row.get('credentials'), str):
+        try:
+            row['credentials'] = json.loads(row['credentials'])
+        except Exception:
+            pass
+    return row
+
+
+def get_wa_channel_config_by_phone(phone_number: str) -> Optional[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM wa_channel_config WHERE phone_number = %s AND is_active = 1", (phone_number,))
+    row = cursor.fetchone()
+    conn.close()
+    if row and isinstance(row.get('credentials'), str):
+        try:
+            row['credentials'] = json.loads(row['credentials'])
+        except Exception:
+            pass
+    return row
+
+
+def update_wa_channel_config(config_id: int, **fields) -> bool:
+    conn = get_conn()
+    cursor = conn.cursor()
+    allowed = ('provider', 'phone_number', 'credentials', 'default_product_id',
+               'is_active', 'webhook_verified', 'auto_reply_enabled',
+               'welcome_template', 'business_hours_json')
+    parts, vals = [], []
+    for k in allowed:
+        if k in fields:
+            v = fields[k]
+            if k in ('credentials', 'business_hours_json') and isinstance(v, dict):
+                v = json.dumps(v)
+            parts.append(f"{k} = %s")
+            vals.append(v)
+    if parts:
+        vals.append(config_id)
+        cursor.execute(f"UPDATE wa_channel_config SET {', '.join(parts)} WHERE id = %s", vals)
+    conn.close()
+    return True
+
+
+def delete_wa_channel_config(config_id: int) -> bool:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM wa_channel_config WHERE id = %s", (config_id,))
+    affected = cursor.rowcount
+    conn.close()
+    return affected > 0
+
+
+# ─── WhatsApp Conversations ───
+
+def save_wa_message(org_id: int, channel_config_id: int, contact_phone: str, contact_name: str,
+                    direction: str, message_type: str, content: str, media_url: str = None,
+                    provider_message_id: str = None, is_ai_generated: bool = False,
+                    ai_model: str = None, lead_id: int = None, metadata: dict = None) -> int:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO wa_conversations
+            (org_id, channel_config_id, lead_id, contact_phone, contact_name, direction,
+             message_type, content, media_url, provider_message_id, is_ai_generated,
+             ai_model, metadata)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ''', (org_id, channel_config_id, lead_id, contact_phone, contact_name, direction,
+          message_type, content, media_url, provider_message_id, is_ai_generated,
+          ai_model, json.dumps(metadata) if metadata else None))
+    last_id = cursor.lastrowid
+    conn.close()
+    return last_id
+
+
+def get_wa_conversations_list(org_id: int) -> List[Dict]:
+    """Get unique conversations grouped by contact, with latest message."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT wc.contact_phone, wc.contact_name, wc.lead_id,
+               wc.content as last_message, wc.direction as last_direction,
+               wc.created_at as last_message_at,
+               COUNT(*) as message_count
+        FROM wa_conversations wc
+        INNER JOIN (
+            SELECT contact_phone, MAX(id) as max_id
+            FROM wa_conversations
+            WHERE org_id = %s
+            GROUP BY contact_phone
+        ) latest ON wc.id = latest.max_id
+        WHERE wc.org_id = %s
+        GROUP BY wc.contact_phone, wc.contact_name, wc.lead_id,
+                 wc.content, wc.direction, wc.created_at
+        ORDER BY wc.created_at DESC
+    ''', (org_id, org_id))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def get_wa_chat_history(org_id: int, contact_phone: str, limit: int = 50, offset: int = 0) -> List[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM wa_conversations
+        WHERE org_id = %s AND contact_phone = %s
+        ORDER BY created_at ASC
+        LIMIT %s OFFSET %s
+    ''', (org_id, contact_phone, limit, offset))
+    rows = cursor.fetchall()
+    conn.close()
+    for r in rows:
+        if isinstance(r.get('metadata'), str):
+            try:
+                r['metadata'] = json.loads(r['metadata'])
+            except Exception:
+                pass
+    return rows
+
+
+def get_wa_message_by_provider_id(provider_message_id: str) -> Optional[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM wa_conversations WHERE provider_message_id = %s", (provider_message_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+def update_wa_message_status(provider_message_id: str, status: str) -> bool:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE wa_conversations SET status = %s WHERE provider_message_id = %s", (status, provider_message_id))
+    affected = cursor.rowcount
+    conn.close()
+    return affected > 0
+
+
+def link_wa_conversation_to_lead(org_id: int, contact_phone: str, lead_id: int) -> bool:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE wa_conversations SET lead_id = %s WHERE org_id = %s AND contact_phone = %s",
+        (lead_id, org_id, contact_phone)
+    )
+    affected = cursor.rowcount
+    conn.close()
+    return affected > 0
