@@ -18,8 +18,8 @@ import DocumentVault from './components/modals/DocumentVault';
 import TranscriptModal from './components/modals/TranscriptModal';
 import EmailDraftModal from './components/modals/EmailDraftModal';
 import './index.css';
-
-const API_URL = "/api";
+import { API_URL } from './constants/api';
+import { INDIAN_VOICES, INDIAN_LANGUAGES } from './constants/voices';
 
 export default function App() {
   // Auth State
@@ -180,86 +180,6 @@ export default function App() {
 
   const [campaigns, setCampaigns] = useState([]);
 
-  const INDIAN_LANGUAGES = [
-    { code: 'hi', name: 'Hindi' },
-    { code: 'ta', name: 'Tamil' },
-    { code: 'te', name: 'Telugu' },
-    { code: 'kn', name: 'Kannada' },
-    { code: 'ml', name: 'Malayalam' },
-    { code: 'mr', name: 'Marathi' },
-    { code: 'gu', name: 'Gujarati' },
-    { code: 'bn', name: 'Bengali' },
-    { code: 'pa', name: 'Punjabi' },
-    { code: 'en', name: 'English' },
-  ];
-
-  const INDIAN_VOICES = {
-    elevenlabs: [
-      { id: 'oH8YmZXJYEZq5ScgoGn9', name: 'Aakash – Friendly Support' },
-      { id: 'X4ExprIXDKrWcHdtGysh', name: 'Anjura – Confident' },
-      { id: 'SXuKWBhKoIoAHKlf6Gt3', name: 'Gaurav – Professional' },
-      { id: 'N09NFwYJJG9VSSgdLQbT', name: 'Ishan – Bold & Upbeat' },
-      { id: 'U9wNM2BNANqtBCawWLgA', name: 'Himanshu – Calm' },
-      { id: 'h061KGyOtpLYDxcoi8E3', name: 'Ravi – Gentle' },
-      { id: 'Ock0AL5DBkvTUDePt4Hm', name: 'Viraj – Commanding' },
-      { id: 'nwj0s2LU9bDWRKND5yzA', name: 'Bunty – Fun' },
-      { id: 'amiAXapsDOAiHJqbsAZj', name: 'Priya – Confident ♀' },
-      { id: '6JsmTroalVewG1gA6Jmw', name: 'Sia – Friendly ♀' },
-      { id: '9vP6R7VVxNwGIGLnpl17', name: 'Suhana – Joyful ♀' },
-      { id: 'hO2yZ8lxM3axUxL8OeKX', name: 'Mini – Cute ♀' },
-      { id: 's0oIsoSJ9raiUm7DJNzW', name: '⭐ Default Voice' },
-    ],
-    smallest: [
-      { id: 'raj', name: 'Raj – Confident ♂' },
-      { id: 'arnav', name: 'Arnav – Friendly ♂' },
-      { id: 'raman', name: 'Raman – Natural ♂' },
-      { id: 'raghav', name: 'Raghav – Professional ♂' },
-      { id: 'aarav', name: 'Aarav – Calm ♂' },
-      { id: 'ankur', name: 'Ankur – Relaxed ♂' },
-      { id: 'aravind', name: 'Aravind – Narrative ♂' },
-      { id: 'saurabh', name: 'Saurabh – Bold ♂' },
-      { id: 'chetan', name: 'Chetan – Strong ♂' },
-      { id: 'ashish', name: 'Ashish – Warm ♂' },
-      { id: 'kajal', name: 'Kajal – Friendly ♀' },
-      { id: 'pragya', name: 'Pragya – Upbeat ♀' },
-      { id: 'nisha', name: 'Nisha – Kind ♀' },
-      { id: 'deepika', name: 'Deepika – Bold ♀' },
-      { id: 'diya', name: 'Diya – Young ♀' },
-      { id: 'sushma', name: 'Sushma – Strong ♀' },
-      { id: 'shweta', name: 'Shweta – Conversational ♀' },
-      { id: 'ananya', name: 'Ananya – Narrative ♀' },
-      { id: 'mithali', name: 'Mithali – Classic ♀' },
-      { id: 'saina', name: 'Saina – Bold ♀' },
-      { id: 'sanya', name: 'Sanya – Friendly ♀' },
-      { id: 'pooja', name: 'Pooja – Informative ♀' },
-      { id: 'mansi', name: 'Mansi – Narrative ♀' },
-    ],
-    sarvam: [
-      { id: 'aditya', name: 'Aditya – Default ♂' },
-      { id: 'rahul', name: 'Rahul – Conversational ♂' },
-      { id: 'amit', name: 'Amit – Professional ♂' },
-      { id: 'dev', name: 'Dev – Young ♂' },
-      { id: 'rohan', name: 'Rohan – Friendly ♂' },
-      { id: 'varun', name: 'Varun – Calm ♂' },
-      { id: 'kabir', name: 'Kabir – Bold ♂' },
-      { id: 'manan', name: 'Manan – Warm ♂' },
-      { id: 'sumit', name: 'Sumit – Natural ♂' },
-      { id: 'ratan', name: 'Ratan – Mature ♂' },
-      { id: 'aayan', name: 'Aayan – Young ♂' },
-      { id: 'shubh', name: 'Shubh – Energetic ♂' },
-      { id: 'ashutosh', name: 'Ashutosh – Deep ♂' },
-      { id: 'advait', name: 'Advait – Smooth ♂' },
-      { id: 'ritu', name: 'Ritu – Warm ♀' },
-      { id: 'priya', name: 'Priya – Friendly ♀' },
-      { id: 'neha', name: 'Neha – Professional ♀' },
-      { id: 'pooja', name: 'Pooja – Kind ♀' },
-      { id: 'simran', name: 'Simran – Cheerful ♀' },
-      { id: 'kavya', name: 'Kavya – Soft ♀' },
-      { id: 'ishita', name: 'Ishita – Confident ♀' },
-      { id: 'shreya', name: 'Shreya – Bright ♀' },
-      { id: 'roopa', name: 'Roopa – Gentle ♀' },
-    ]
-  };
 
   // Auth block moved down to fix React hooks violation
 
