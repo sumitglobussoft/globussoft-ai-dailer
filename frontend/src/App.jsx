@@ -5,7 +5,7 @@ import Sandbox from './Sandbox';
 import AuthPage from './components/AuthPage';
 import TopHeader from './components/TopHeader';
 import CrmTab from './components/tabs/CrmTab';
-import OpsTab from './components/tabs/OpsTab';
+import OpsPage from './pages/OpsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import WhatsAppTab from './components/tabs/WhatsAppTab';
 import IntegrationsTab from './components/tabs/IntegrationsTab';
@@ -112,9 +112,7 @@ export default function App() {
   const [punchStatus, setPunchStatus] = useState(null);
   const [punching, setPunching] = useState(false);
 
-  // Workflow State
-  const [tasks, setTasks] = useState([]);
-  const [reports, setReports] = useState(null);
+  // Workflow State — moved to OpsPage
 
   // WhatsApp State
   const [whatsappLogs, setWhatsappLogs] = useState([]);
@@ -201,13 +199,7 @@ export default function App() {
     }
   };
 
-  const fetchTasks = async () => {
-    try { const res = await apiFetch(`${API_URL}/tasks`); setTasks(await res.json()); } catch(e){}
-  };
-
-  const fetchReports = async () => {
-    try { const res = await apiFetch(`${API_URL}/reports`); setReports(await res.json()); } catch(e){}
-  };
+  // fetchTasks, fetchReports — moved to OpsPage
 
   const fetchWhatsappLogs = async () => {
     try { const res = await apiFetch(`${API_URL}/whatsapp`); setWhatsappLogs(await res.json()); } catch(e){}
@@ -276,8 +268,6 @@ export default function App() {
     if (!currentUser) return;
     fetchLeads();
     fetchSites();
-    fetchTasks();
-    fetchReports();
     fetchWhatsappLogs();
     fetchPronunciations();
     fetchCampaigns();
@@ -292,19 +282,11 @@ export default function App() {
         body: JSON.stringify({ status: newStatus })
       });
       fetchLeads();
-      fetchTasks();
-      fetchReports();
       fetchWhatsappLogs();
     } catch (e) { console.error(e); }
   };
 
-  const handleCompleteTask = async (taskId) => {
-    try {
-      await apiFetch(`${API_URL}/tasks/${taskId}/complete`, { method: 'PUT' });
-      fetchTasks();
-      fetchReports();
-    } catch (e) { console.error(e); }
-  };
+  // handleCompleteTask — moved to OpsPage
 
   const handleCreateLead = async (e) => {
     e.preventDefault();
@@ -715,7 +697,6 @@ export default function App() {
         });
         const data = await response.json();
         setPunchStatus(data);
-        fetchReports();
       } catch (e) {
         setPunchStatus({ status: 'error', message: 'Network error checking in.' });
       } finally {
@@ -1001,7 +982,7 @@ export default function App() {
           orgTimezone={orgTimezone}
         />
       ) : activeTab === 'ops' ? (
-        <OpsTab reports={reports} tasks={tasks} handleCompleteTask={handleCompleteTask} />
+        <OpsPage apiFetch={apiFetch} API_URL={API_URL} />
       ) : activeTab === 'analytics' ? (
         <AnalyticsPage apiFetch={apiFetch} API_URL={API_URL} />
       ) : activeTab === 'whatsapp' ? (
