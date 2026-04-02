@@ -7,7 +7,7 @@ import TopHeader from './components/TopHeader';
 import CrmTab from './components/tabs/CrmTab';
 import OpsPage from './pages/OpsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
-import WhatsAppTab from './components/tabs/WhatsAppTab';
+import WhatsAppPage from './pages/WhatsAppPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import SettingsTab from './components/tabs/SettingsTab';
 import LogsTab from './components/tabs/LogsTab';
@@ -112,8 +112,7 @@ export default function App() {
 
   // Workflow State — moved to OpsPage
 
-  // WhatsApp State
-  const [whatsappLogs, setWhatsappLogs] = useState([]);
+  // WhatsApp State — moved to WhatsAppPage
 
   // Document Vault State
   const [activeLeadDocs, setActiveLeadDocs] = useState(null);
@@ -179,9 +178,7 @@ export default function App() {
 
   // fetchTasks, fetchReports — moved to OpsPage
 
-  const fetchWhatsappLogs = async () => {
-    try { const res = await apiFetch(`${API_URL}/whatsapp`); setWhatsappLogs(await res.json()); } catch(e){}
-  };
+  // fetchWhatsappLogs — moved to WhatsAppPage (WhatsAppTab manages its own data)
 
   // fetchAnalytics — moved to AnalyticsPage
 
@@ -243,7 +240,6 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     fetchLeads();
-    fetchWhatsappLogs();
     fetchPronunciations();
     fetchCampaigns();
     fetchOrgs();
@@ -257,7 +253,6 @@ export default function App() {
         body: JSON.stringify({ status: newStatus })
       });
       fetchLeads();
-      fetchWhatsappLogs();
     } catch (e) { console.error(e); }
   };
 
@@ -906,7 +901,7 @@ export default function App() {
       ) : activeTab === 'analytics' ? (
         <AnalyticsPage apiFetch={apiFetch} API_URL={API_URL} />
       ) : activeTab === 'whatsapp' ? (
-        <WhatsAppTab apiFetch={apiFetch} API_URL={API_URL} orgProducts={orgProducts} selectedOrg={selectedOrg} orgTimezone={orgTimezone} />
+        <WhatsAppPage apiFetch={apiFetch} API_URL={API_URL} orgProducts={orgProducts} selectedOrg={selectedOrg} orgTimezone={orgTimezone} />
       ) : activeTab === 'integrations' ? (
         <IntegrationsPage apiFetch={apiFetch} API_URL={API_URL} orgTimezone={orgTimezone} />
       ) : activeTab === 'monitor' ? (
