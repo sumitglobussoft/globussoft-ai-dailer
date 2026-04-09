@@ -18,3 +18,4 @@ groq
 faiss-cpu
 sentence-transformers
 redis
+pymysql
