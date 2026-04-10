@@ -38,6 +38,7 @@ from database import (
     get_product_prompt, update_product_prompt,
     save_call_review, get_call_reviews_by_campaign, get_call_review_by_transcript,
     create_demo_request, get_all_demo_requests,
+    get_retries_by_campaign,
 )
 import rag
 
@@ -852,6 +853,17 @@ def api_get_campaign_stats(campaign_id: int, current_user: dict = Depends(get_cu
 @api_router.get("/api/campaigns/{campaign_id}/call-log")
 def api_get_campaign_call_log(campaign_id: int, current_user: dict = Depends(get_current_user)):
     return get_campaign_call_log(campaign_id)
+
+@api_router.get("/api/campaigns/{campaign_id}/retries")
+def api_get_campaign_retries(campaign_id: int, current_user: dict = Depends(get_current_user)):
+    """Get the auto-retry queue for a campaign."""
+    retries = get_retries_by_campaign(campaign_id)
+    # Serialize datetime fields for JSON
+    for r in retries:
+        for key in ('retry_after', 'created_at'):
+            if r.get(key) and hasattr(r[key], 'isoformat'):
+                r[key] = r[key].isoformat()
+    return retries
 
 @api_router.get("/api/campaigns/{campaign_id}/call-reviews")
 def api_get_campaign_call_reviews(campaign_id: int, current_user: dict = Depends(get_current_user)):

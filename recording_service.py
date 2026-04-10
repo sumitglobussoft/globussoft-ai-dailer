@@ -10,7 +10,7 @@ import time
 import logging
 import httpx
 
-from database import save_call_transcript, save_call_review
+from database import save_call_transcript, save_call_review, create_retry, has_pending_or_exhausted_retry, get_conn
 
 
 async def save_call_recording_and_transcript(
@@ -197,6 +197,43 @@ async def save_call_recording_and_transcript(
                 transcript_turns=transcript_turns,
                 logger=ws_logger,
             ))
+
+    # --- Auto-retry for short/failed calls ---
+    _should_retry = (
+        call_duration < 30  # short call = likely no-answer / busy / dropped
+        or len(transcript_turns) <= 1  # no real conversation happened
+    )
+    if _should_retry and _call_lead_id and _campaign_id:
+        try:
+            retry_info = has_pending_or_exhausted_retry(_call_lead_id)
+            if not retry_info['has_pending'] and not retry_info['is_exhausted']:
+                # Determine attempt number (increment from last attempt if exists)
+                next_attempt = retry_info.get('attempt_number', 0) + 1
+                # Look up org_id for this lead
+                _rc = get_conn()
+                _rcur = _rc.cursor()
+                _rcur.execute("SELECT org_id FROM leads WHERE id = %s", (_call_lead_id,))
+                _lead_row = _rcur.fetchone()
+                _rc.close()
+                org_id = _lead_row['org_id'] if _lead_row else None
+                if org_id:
+                    call_status = "short_call" if call_duration < 30 else "no_conversation"
+                    create_retry(
+                        org_id=org_id,
+                        lead_id=_call_lead_id,
+                        campaign_id=_campaign_id,
+                        last_call_status=call_status,
+                        attempt_number=next_attempt,
+                        max_attempts=3,
+                        retry_delay_minutes=120,
+                    )
+                    ws_logger.info(f"[RETRY] Queued retry #{next_attempt} for lead {_call_lead_id} (duration={call_duration}s)")
+            elif retry_info['has_pending']:
+                ws_logger.info(f"[RETRY] Lead {_call_lead_id} already has a pending retry, skipping")
+            elif retry_info['is_exhausted']:
+                ws_logger.info(f"[RETRY] Lead {_call_lead_id} has exhausted max retries, skipping")
+        except Exception as _retry_err:
+            ws_logger.error(f"[RETRY] Error queueing retry for lead {_call_lead_id}: {_retry_err}")
 
 
 async def _analyze_call_transcript(transcript_id, campaign_id, lead_id, transcript_turns, logger):

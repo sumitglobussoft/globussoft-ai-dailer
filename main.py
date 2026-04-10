@@ -76,6 +76,8 @@ async def on_startup():
     init_billing_tables()
     seed_default_plans()
     asyncio.create_task(poll_crm_leads())
+    from retry_worker import retry_worker_loop
+    asyncio.create_task(retry_worker_loop())
 
 async def poll_crm_leads():
     while True:
