@@ -16,7 +16,10 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import logging
 logger = logging.getLogger("uvicorn.error")
-from auth import get_current_user
+import string
+import secrets
+from auth import get_current_user, create_user_direct
+from billing import create_subscription, get_growth_plan_id
 from database import (
     get_all_leads, get_lead_by_id, create_lead, update_lead, delete_lead,
     get_all_sites, create_punch, get_site_by_id,
@@ -117,6 +120,44 @@ api_router = APIRouter()
 @api_router.post("/api/public/demo-request")
 def api_create_demo_request(data: DemoRequestCreate):
     rid = create_demo_request(data.first_name, data.last_name, data.phone, data.email, data.request_type)
+
+    # Auto-provision trial accounts
+    if data.request_type == "trial":
+        try:
+            # Generate random 8-char password
+            alphabet = string.ascii_letters + string.digits
+            password = ''.join(secrets.choice(alphabet) for _ in range(8))
+
+            # Create organization
+            org_name = f"{data.first_name}'s Organization"
+            org_id = create_organization(org_name)
+
+            # Create user
+            full_name = f"{data.first_name} {data.last_name}".strip()
+            create_user_direct(data.email, password, full_name, org_id)
+
+            # Create trial subscription (Growth plan, 7-day trial)
+            plan_id = get_growth_plan_id()
+            if plan_id:
+                create_subscription(org_id, plan_id)
+
+            return {
+                "ok": True, "id": rid,
+                "provisioned": True,
+                "credentials": {
+                    "username": data.email,
+                    "password": password,
+                    "login_url": "https://test.callified.ai",
+                }
+            }
+        except ValueError as e:
+            # Email already registered — return success without credentials
+            logger.warning(f"[TRIAL] Auto-provision failed for {data.email}: {e}")
+            return {"ok": True, "id": rid, "provisioned": False, "error": str(e)}
+        except Exception as e:
+            logger.error(f"[TRIAL] Auto-provision error for {data.email}: {e}")
+            return {"ok": True, "id": rid, "provisioned": False}
+
     return {"ok": True, "id": rid}
 
 @api_router.get("/api/demo-requests")
