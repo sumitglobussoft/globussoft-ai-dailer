@@ -18,7 +18,7 @@ import logging
 logger = logging.getLogger("uvicorn.error")
 import string
 import secrets
-from auth import get_current_user, create_user_direct
+from auth import get_current_user, get_current_user_or_api_key, create_user_direct
 from billing import create_subscription, get_growth_plan_id
 from database import (
     get_all_leads, get_lead_by_id, create_lead, update_lead, delete_lead,
@@ -48,6 +48,7 @@ from database import (
     add_dnd_number, add_dnd_numbers_bulk, is_dnd_number, remove_dnd_number,
     get_dnd_count, get_dnd_numbers,
     is_onboarding_completed, mark_onboarding_completed,
+    create_api_key, get_api_keys_by_org, delete_api_key,
 )
 import rag
 from email_service import send_email, _wrap_html
@@ -182,7 +183,7 @@ def api_fetch_logs():
 # --- Leads ---
 
 @api_router.get("/api/leads")
-def api_get_leads(current_user: dict = Depends(get_current_user)):
+def api_get_leads(current_user: dict = Depends(get_current_user_or_api_key)):
     return get_all_leads(current_user.get("org_id"))
 
 @api_router.get("/api/leads/export")
@@ -211,7 +212,7 @@ def api_search_leads(q: str = "", current_user: dict = Depends(get_current_user)
     return search_leads(q, current_user.get("org_id"))
 
 @api_router.post("/api/leads")
-def api_create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user)):
+def api_create_lead(lead: LeadCreate, current_user: dict = Depends(get_current_user_or_api_key)):
     try:
         lead_id = create_lead(lead.dict(), current_user.get("org_id"))
         return {"status": "success", "id": lead_id}
@@ -337,7 +338,7 @@ def api_get_analytics(current_user: dict = Depends(get_current_user)):
     return get_analytics()
 
 @api_router.get("/api/analytics/dashboard")
-def api_get_analytics_dashboard(current_user: dict = Depends(get_current_user)):
+def api_get_analytics_dashboard(current_user: dict = Depends(get_current_user_or_api_key)):
     """Aggregated analytics dashboard with real metrics from calls, transcripts, and reviews."""
     from database import get_conn
     from datetime import datetime, timedelta
@@ -1023,7 +1024,7 @@ def remove_pronunciation(pronunciation_id: int, current_user: dict = Depends(get
 # --- Campaigns ---
 
 @api_router.get("/api/campaigns")
-def api_get_campaigns(current_user: dict = Depends(get_current_user)):
+def api_get_campaigns(current_user: dict = Depends(get_current_user_or_api_key)):
     campaigns = get_campaigns_by_org(current_user.get("org_id"))
     # Include stats for each campaign
     for c in campaigns:
@@ -1360,6 +1361,35 @@ def api_onboarding_status(current_user: dict = Depends(get_current_user)):
 def api_onboarding_complete(current_user: dict = Depends(get_current_user)):
     org_id = current_user.get("org_id")
     mark_onboarding_completed(org_id)
+    return {"status": "ok"}
+
+
+# --- API Keys ---
+
+class ApiKeyCreate(BaseModel):
+    name: str
+
+@api_router.post("/api/api-keys")
+def api_create_api_key(data: ApiKeyCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "Admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    org_id = current_user.get("org_id")
+    result = create_api_key(org_id, data.name)
+    return result
+
+@api_router.get("/api/api-keys")
+def api_list_api_keys(current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "Admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    org_id = current_user.get("org_id")
+    return get_api_keys_by_org(org_id)
+
+@api_router.delete("/api/api-keys/{key_id}")
+def api_delete_api_key(key_id: int, current_user: dict = Depends(get_current_user)):
+    if current_user.get("role") != "Admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    org_id = current_user.get("org_id")
+    delete_api_key(key_id, org_id)
     return {"status": "ok"}
 
 
