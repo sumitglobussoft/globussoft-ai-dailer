@@ -46,8 +46,22 @@
     </form>
     <div id="formSuccess" class="form-success" style="display:none">
       <div class="success-icon">&#10003;</div>
-      <h3>You're in!</h3>
-      <p>We'll set up your trial account and reach out shortly.</p>
+      <h3 id="successTitle">You're in!</h3>
+      <div id="successGeneric">
+        <p>We'll set up your trial account and reach out shortly.</p>
+      </div>
+      <div id="successCredentials" style="display:none">
+        <p style="color:#22c55e;font-weight:600;margin-bottom:12px;">Your account is ready!</p>
+        <div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:16px;text-align:left;margin-bottom:16px;">
+          <p style="margin:0 0 8px;color:#aaa;font-size:14px;">Login URL</p>
+          <p style="margin:0 0 12px;"><a href="https://test.callified.ai" target="_blank" style="color:#818cf8;">https://test.callified.ai</a></p>
+          <p style="margin:0 0 8px;color:#aaa;font-size:14px;">Username</p>
+          <p style="margin:0 0 12px;color:#fff;" id="credUsername"></p>
+          <p style="margin:0 0 8px;color:#aaa;font-size:14px;">Password</p>
+          <p style="margin:0;color:#fff;font-family:monospace;font-size:16px;letter-spacing:1px;" id="credPassword"></p>
+        </div>
+        <p style="color:#f59e0b;font-size:14px;">Your 7-day free trial has started. Save your password — you won't see it again.</p>
+      </div>
       <a href="index.html" class="form-back">&larr; Back to Callified AI</a>
     </div>
   </div>
@@ -75,8 +89,16 @@ async function submitForm(e) {
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error('Failed');
+    const result = await res.json();
     form.style.display = 'none';
     document.getElementById('formSuccess').style.display = '';
+    if (result.provisioned && result.credentials) {
+      document.getElementById('successTitle').textContent = 'Your Account is Ready!';
+      document.getElementById('successGeneric').style.display = 'none';
+      document.getElementById('successCredentials').style.display = '';
+      document.getElementById('credUsername').textContent = result.credentials.username;
+      document.getElementById('credPassword').textContent = result.credentials.password;
+    }
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Start Free Trial';

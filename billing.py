@@ -136,6 +136,16 @@ def get_all_plans() -> List[Dict]:
     return rows
 
 
+def get_growth_plan_id() -> Optional[int]:
+    """Return the plan_id for the Growth plan (used for trial provisioning)."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM billing_plans WHERE name = 'Growth' AND is_active = TRUE LIMIT 1")
+    row = cursor.fetchone()
+    conn.close()
+    return row['id'] if row else None
+
+
 def get_plan(plan_id: int) -> Optional[Dict]:
     conn = get_conn()
     cursor = conn.cursor()

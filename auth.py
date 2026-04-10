@@ -81,6 +81,16 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
+def create_user_direct(username: str, password: str, full_name: str, org_id: int) -> dict:
+    """Create a user programmatically (for trial auto-provisioning).
+    Returns dict with user_id, email, and org_id."""
+    existing = get_user_by_email(username)
+    if existing:
+        raise ValueError("Email already registered")
+    hashed = get_password_hash(password)
+    user_id = create_user(username, hashed, full_name, role="Admin", org_id=org_id)
+    return {"user_id": user_id, "email": username, "org_id": org_id}
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
