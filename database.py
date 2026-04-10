@@ -347,6 +347,24 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS call_retries (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            org_id INT NOT NULL,
+            campaign_id INT,
+            lead_id INT NOT NULL,
+            attempt_number INT DEFAULT 1,
+            max_attempts INT DEFAULT 3,
+            retry_after DATETIME NOT NULL,
+            status ENUM('pending','dialing','completed','exhausted','cancelled') DEFAULT 'pending',
+            last_call_status VARCHAR(50),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (org_id) REFERENCES organizations (id) ON DELETE CASCADE,
+            FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE CASCADE,
+            INDEX idx_retry_pending (status, retry_after)
+        )
+    ''')
+
     conn.close()
 
 def get_all_leads(org_id: int) -> List[Dict]:
@@ -1577,3 +1595,87 @@ def get_scheduled_calls_by_org(org_id: int) -> List[Dict]:
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+
+# ─── Call Retries ─────────────────────────────────────────────────────────────
+
+def create_retry(org_id: int, lead_id: int, campaign_id: int = None, last_call_status: str = None,
+                 attempt_number: int = 1, max_attempts: int = 3, retry_delay_minutes: int = 120) -> int:
+    conn = get_conn()
+    cursor = conn.cursor()
+    retry_after = datetime.now() + timedelta(minutes=retry_delay_minutes)
+    cursor.execute(
+        """INSERT INTO call_retries (org_id, campaign_id, lead_id, attempt_number, max_attempts,
+           retry_after, status, last_call_status)
+           VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)""",
+        (org_id, campaign_id, lead_id, attempt_number, max_attempts, retry_after, last_call_status)
+    )
+    rid = cursor.lastrowid
+    conn.close()
+    return rid
+
+
+def get_pending_retries() -> List[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT cr.*, l.first_name, l.last_name, l.phone, l.interest
+           FROM call_retries cr
+           JOIN leads l ON cr.lead_id = l.id
+           WHERE cr.status = 'pending' AND cr.retry_after <= NOW()
+           ORDER BY cr.retry_after ASC"""
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def update_retry_status(retry_id: int, status: str, attempt_number: int = None):
+    conn = get_conn()
+    cursor = conn.cursor()
+    if attempt_number is not None:
+        cursor.execute(
+            "UPDATE call_retries SET status = %s, attempt_number = %s WHERE id = %s",
+            (status, attempt_number, retry_id)
+        )
+    else:
+        cursor.execute(
+            "UPDATE call_retries SET status = %s WHERE id = %s",
+            (status, retry_id)
+        )
+    conn.close()
+
+
+def get_retries_by_campaign(campaign_id: int) -> List[Dict]:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        """SELECT cr.*, l.first_name, l.last_name, l.phone
+           FROM call_retries cr
+           JOIN leads l ON cr.lead_id = l.id
+           WHERE cr.campaign_id = %s
+           ORDER BY cr.created_at DESC""",
+        (campaign_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
+def has_pending_or_exhausted_retry(lead_id: int) -> Dict:
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT status, attempt_number, max_attempts FROM call_retries WHERE lead_id = %s ORDER BY created_at DESC LIMIT 1",
+        (lead_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return {'has_pending': False, 'is_exhausted': False}
+    return {
+        'has_pending': row['status'] == 'pending',
+        'is_exhausted': row['status'] == 'exhausted' or row['attempt_number'] >= row['max_attempts'],
+        'attempt_number': row['attempt_number'],
+        'max_attempts': row['max_attempts'],
+    }

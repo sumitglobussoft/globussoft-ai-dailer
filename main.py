@@ -78,6 +78,8 @@ async def on_startup():
     asyncio.create_task(poll_crm_leads())
     from scheduler import run_scheduler
     asyncio.create_task(run_scheduler())
+    from retry_worker import retry_worker_loop
+    asyncio.create_task(retry_worker_loop())
 
 async def poll_crm_leads():
     while True:
