@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks
 
 import call_logger
 import redis_store
-from database import get_lead_by_id, update_lead_status, save_call_transcript
+from database import get_lead_by_id, update_lead_status, save_call_transcript, is_dnd_number
 from billing import get_usage_summary
 from call_guard import is_calling_allowed, get_next_allowed_time, get_org_timezone
 
@@ -156,6 +156,9 @@ async def api_dial_lead(lead_id: int, background_tasks: BackgroundTasks):
     if not guard["allowed"]:
         next_time = get_next_allowed_time(tz)
         return {"status": "error", "message": f"Calling not allowed at this hour. TRAI rules: calls only between 9 AM - 9 PM. Next allowed: {next_time}"}
+    # DND check
+    if org_id and is_dnd_number(org_id, lead["phone"]):
+        return {"status": "error", "message": "This number is on the DND list and cannot be called."}
     # Enforce plan minute limits
     if org_id:
         try:
@@ -187,6 +190,9 @@ async def api_campaign_dial_lead(campaign_id: int, lead_id: int, background_task
     if not guard["allowed"]:
         next_time = get_next_allowed_time(tz)
         return {"status": "error", "message": f"Calling not allowed at this hour. TRAI rules: calls only between 9 AM - 9 PM. Next allowed: {next_time}"}
+    # DND check
+    if org_id and is_dnd_number(org_id, lead["phone"]):
+        return {"status": "error", "message": "This number is on the DND list and cannot be called."}
     # Enforce plan minute limits
     if org_id:
         try:
@@ -250,6 +256,11 @@ async def api_campaign_redial_failed(campaign_id: int, background_tasks: Backgro
         for i, lead in enumerate(failed_leads):
             if i > 0:
                 await asyncio.sleep(30)
+            # Skip DND numbers
+            if org_id and is_dnd_number(org_id, lead['phone']):
+                log.info(f"[REDIAL] Skipping DND number: {lead['phone']}")
+                emit_campaign_event(campaign_id, lead['first_name'], lead['phone'], "dnd_skipped", "DND list")
+                continue
             log.info(f"[REDIAL] {i+1}/{len(failed_leads)}: Dialing {lead['first_name']} ({lead['phone']})")
             emit_campaign_event(campaign_id, lead['first_name'], lead['phone'], "dialing", f"{i+1}/{len(failed_leads)}")
             call_data = {
@@ -316,6 +327,11 @@ async def api_campaign_dial_all(campaign_id: int, background_tasks: BackgroundTa
         for i, lead in enumerate(dialable):
             if i > 0:
                 await asyncio.sleep(30)
+            # Skip DND numbers
+            if org_id and is_dnd_number(org_id, lead['phone']):
+                log.info(f"[DIAL-ALL] Skipping DND number: {lead['phone']}")
+                emit_campaign_event(campaign_id, lead['first_name'], lead['phone'], "dnd_skipped", "DND list")
+                continue
             log.info(f"[DIAL-ALL] {i+1}/{len(dialable)}: Dialing {lead['first_name']} ({lead['phone']})")
             emit_campaign_event(campaign_id, lead['first_name'], lead['phone'], "dialing", f"{i+1}/{len(dialable)}")
             call_data = {
