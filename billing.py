@@ -28,6 +28,7 @@ RAZORPAY_API = "https://api.razorpay.com/v1"
 
 def init_billing_tables():
     """Create billing tables. Called from init_db() in database.py."""
+    from invoice_service import init_invoices_table
     conn = get_conn()
     cursor = conn.cursor()
 
@@ -99,6 +100,9 @@ def init_billing_tables():
     ''')
 
     conn.close()
+
+    # Create invoices table
+    init_invoices_table()
 
 
 # ─── Seed default plans ──────────────────────────────────────────────────────
@@ -387,6 +391,23 @@ def verify_razorpay_payment(org_id: int, razorpay_order_id: str, razorpay_paymen
         sub_id = sub['id']
     else:
         sub_id = create_subscription(org_id, plan_id)
+
+    # Auto-create invoice for this payment
+    try:
+        from invoice_service import create_invoice
+        # Look up the payment record to get its DB id and amount
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, amount_paise FROM billing_payments WHERE razorpay_payment_id = %s",
+            (razorpay_payment_id,)
+        )
+        pay_row = cursor.fetchone()
+        conn.close()
+        if pay_row:
+            create_invoice(org_id, pay_row['id'], pay_row['amount_paise'])
+    except Exception as e:
+        logger.error(f"[BILLING] Invoice creation failed: {e}")
 
     logger.info(f"[BILLING] Payment verified: org={org_id}, plan={plan_id}, payment={razorpay_payment_id}")
     return {"status": "success", "subscription_id": sub_id}
