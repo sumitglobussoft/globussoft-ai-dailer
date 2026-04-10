@@ -56,6 +56,7 @@ from ws_handler import (
 from dial_routes import dial_router, last_dial_result
 from webhook_routes import webhook_router
 from wa_routes import wa_router
+from billing_routes import billing_router
 
 app.include_router(auth_router)
 app.include_router(api_router)
@@ -64,12 +65,16 @@ app.include_router(mobile_api)
 app.include_router(dial_router)
 app.include_router(webhook_router)
 app.include_router(wa_router)
+app.include_router(billing_router)
 
 # ─── Startup ─────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def on_startup():
     init_db()
+    from billing import init_billing_tables, seed_default_plans
+    init_billing_tables()
+    seed_default_plans()
     asyncio.create_task(poll_crm_leads())
 
 async def poll_crm_leads():
