@@ -33,7 +33,7 @@ export default function TopHeader({
         Globussoft Generative AI Dialer <span className="badge" style={{background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', ml: 2}}>LIVE</span>
       </div>
 
-      <div style={{display: 'flex', gap: '10px', alignItems: 'center', flex: 1}}>
+      <div className="tab-bar" style={{display: 'flex', gap: '10px', alignItems: 'center', flex: 1}}>
         <button data-testid="tab-crm" className={`tab-btn ${activeTab === 'crm' ? 'active' : ''}`} onClick={() => navigate('/crm')}>📊 CRM</button>
         {userRole === 'Admin' && <button data-testid="tab-campaigns" className={`tab-btn ${activeTab === 'campaigns' ? 'active' : ''}`} onClick={() => navigate('/campaigns')}>📢 Campaigns</button>}
         {userRole === 'Admin' && <button data-testid="tab-ops" className={`tab-btn ${activeTab === 'ops' ? 'active' : ''}`} onClick={() => navigate('/ops')}>📋 Ops & Tasks</button>}
@@ -48,7 +48,7 @@ export default function TopHeader({
         {userRole === 'Admin' && <button data-testid="tab-settings" className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => navigate('/settings')}>⚙️ Settings</button>}
         {userRole === 'Admin' && <button data-testid="tab-logs" className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => navigate('/logs')}>📋 Live Logs</button>}
 
-        <div style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px'}}>
+        <div className="header-user-info" style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px'}}>
           {callingStatus && (
             <span style={{
               fontSize: '0.75rem',
