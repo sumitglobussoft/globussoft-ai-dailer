@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks
 import call_logger
 import redis_store
 from database import get_lead_by_id, update_lead_status, save_call_transcript
+from billing import get_usage_summary
 
 # ─── Telephony Config ────────────────────────────────────────────────────────
 
@@ -147,6 +148,15 @@ async def api_dial_lead(lead_id: int, background_tasks: BackgroundTasks):
     lead = get_lead_by_id(lead_id)
     if not lead:
         return {"status": "error", "message": "Lead not found"}
+    # Enforce plan minute limits
+    org_id = lead.get("org_id")
+    if org_id:
+        try:
+            usage = get_usage_summary(org_id)
+            if usage.get("has_subscription") and usage.get("minutes_remaining", 1) <= 0:
+                return {"status": "error", "message": "No minutes remaining. Please upgrade your plan."}
+        except Exception:
+            pass  # Don't block calls if billing check fails
     background_tasks.add_task(initiate_call, {
         "name": lead["first_name"], "phone_number": lead["phone"],
         "interest": lead.get("interest") or lead["source"],
@@ -163,7 +173,16 @@ async def api_campaign_dial_lead(campaign_id: int, lead_id: int, background_task
         return {"status": "error", "message": "Lead not found"}
     if not campaign:
         return {"status": "error", "message": "Campaign not found"}
-    voice = get_campaign_voice_settings(campaign_id, campaign.get("org_id"))
+    # Enforce plan minute limits
+    org_id = campaign.get("org_id")
+    if org_id:
+        try:
+            usage = get_usage_summary(org_id)
+            if usage.get("has_subscription") and usage.get("minutes_remaining", 1) <= 0:
+                return {"status": "error", "message": "No minutes remaining. Please upgrade your plan."}
+        except Exception:
+            pass  # Don't block calls if billing check fails
+    voice = get_campaign_voice_settings(campaign_id, org_id)
     call_data = {
         "name": lead["first_name"], "phone_number": lead["phone"],
         "interest": campaign.get("product_name", lead.get("interest", "our platform")),
@@ -189,6 +208,15 @@ async def api_campaign_redial_failed(campaign_id: int, background_tasks: Backgro
     campaign = get_campaign_by_id(campaign_id)
     if not campaign:
         return {"status": "error", "message": "Campaign not found"}
+    # Enforce plan minute limits
+    org_id = campaign.get("org_id")
+    if org_id:
+        try:
+            usage = get_usage_summary(org_id)
+            if usage.get("has_subscription") and usage.get("minutes_remaining", 1) <= 0:
+                return {"status": "error", "message": "No minutes remaining. Please upgrade your plan."}
+        except Exception:
+            pass
 
     leads = get_campaign_leads(campaign_id)
     failed_leads = [l for l in leads if l.get("status", "").startswith("Call Failed")]
@@ -237,6 +265,15 @@ async def api_campaign_dial_all(campaign_id: int, background_tasks: BackgroundTa
     campaign = get_campaign_by_id(campaign_id)
     if not campaign:
         return {"status": "error", "message": "Campaign not found"}
+    # Enforce plan minute limits
+    org_id = campaign.get("org_id")
+    if org_id:
+        try:
+            usage = get_usage_summary(org_id)
+            if usage.get("has_subscription") and usage.get("minutes_remaining", 1) <= 0:
+                return {"status": "error", "message": "No minutes remaining. Please upgrade your plan."}
+        except Exception:
+            pass
 
     leads = get_campaign_leads(campaign_id)
     if force:

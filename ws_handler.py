@@ -24,6 +24,7 @@ from tts import synthesize_and_send_audio, _tts_recording_buffers
 import redis_store
 from prompt_builder import build_call_context
 from recording_service import save_call_recording_and_transcript
+from billing import record_usage
 
 # ─── Shared State ────────────────────────────────────────────────────────────
 # Non-serializable state stays in-memory (asyncio.Task, WebSocket connections)
@@ -666,6 +667,16 @@ async def handle_media_stream(websocket: WebSocket):
                 except Exception as _te:
                     import traceback
                     ws_logger.error(f"[TRANSCRIPT] Error saving: {_te}\n{traceback.format_exc()}")
+
+            # Record billing usage
+            if _call_org_id and _call_start_time:
+                try:
+                    call_duration_s = time.time() - _call_start_time
+                    call_minutes = round(call_duration_s / 60, 2)
+                    record_usage(org_id=_call_org_id, minutes=call_minutes, call_id=_call_lead_id)
+                    ws_logger.info(f"[BILLING] Recorded {call_minutes} min for org {_call_org_id}")
+                except Exception as _billing_err:
+                    ws_logger.error(f"[BILLING] Failed to record usage: {_billing_err}")
 
         # Cleanup
         if stream_sid:
