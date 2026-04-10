@@ -141,7 +141,6 @@ async def handle_media_stream(websocket: WebSocket):
     pronunciation_ctx = get_pronunciation_context()
 
     # Check for campaign context (from query params or Redis pending call)
-    _campaign_id = None
     _qp_campaign = websocket.query_params.get("campaign_id", "")
     if _qp_campaign and _qp_campaign.isdigit():
         _campaign_id = int(_qp_campaign)
