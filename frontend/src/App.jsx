@@ -19,6 +19,7 @@ import BillingPage from './pages/BillingPage';
 import DndPage from './pages/DndPage';
 import ScheduledCallsPage from './pages/ScheduledCallsPage';
 import CampaignsPage from './pages/CampaignsPage';
+import TeamPage from './pages/TeamPage';
 import './index.css';
 import { API_URL } from './constants/api';
 import { INDIAN_VOICES, INDIAN_LANGUAGES } from './constants/voices';
@@ -133,6 +134,7 @@ export default function App() {
         <Route path="/billing" element={<BillingPage apiFetch={apiFetch} API_URL={API_URL} />} />
         <Route path="/dnd" element={<DndPage apiFetch={apiFetch} API_URL={API_URL} />} />
         <Route path="/scheduled" element={<ScheduledCallsPage apiFetch={apiFetch} API_URL={API_URL} />} />
+        <Route path="/team" element={<TeamPage apiFetch={apiFetch} API_URL={API_URL} />} />
         <Route path="*" element={<Navigate to="/crm" replace />} />
       </Routes>
 

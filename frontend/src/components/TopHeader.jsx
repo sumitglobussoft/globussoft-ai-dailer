@@ -48,6 +48,7 @@ export default function TopHeader({
         {userRole === 'Admin' && <button data-testid="tab-dnd" className={`tab-btn ${activeTab === 'dnd' ? 'active' : ''}`} onClick={() => navigate('/dnd')}>🚫 DND</button>}
         {userRole === 'Admin' && <button data-testid="tab-settings" className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => navigate('/settings')}>⚙️ Settings</button>}
         {userRole === 'Admin' && <button data-testid="tab-logs" className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => navigate('/logs')}>📋 Live Logs</button>}
+        {userRole === 'Admin' && <button data-testid="tab-team" className={`tab-btn ${activeTab === 'team' ? 'active' : ''}`} onClick={() => navigate('/team')}>👥 Team</button>}
 
         <div className="header-user-info" style={{marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px'}}>
           {callingStatus && (
