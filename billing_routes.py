@@ -5,11 +5,15 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from auth import get_current_user
+from fastapi.responses import HTMLResponse
 from billing import (
     get_all_plans, get_plan,
     get_org_subscription, create_subscription, cancel_subscription,
     get_usage_summary, get_payment_history,
     create_razorpay_order, verify_razorpay_payment, handle_razorpay_webhook,
+)
+from invoice_service import (
+    get_invoices_by_org, get_invoice, generate_invoice_html,
 )
 from email_service import send_payment_receipt
 import logging
@@ -130,6 +134,50 @@ def api_verify_payment(data: PaymentVerify, current_user: dict = Depends(get_cur
 def api_get_payments(current_user: dict = Depends(get_current_user)):
     org_id = current_user.get("org_id")
     return get_payment_history(org_id)
+
+
+# ─── Invoices ───────────────────────────────────────────────────────────────
+
+@billing_router.get("/api/billing/invoices")
+def api_list_invoices(current_user: dict = Depends(get_current_user)):
+    org_id = current_user.get("org_id")
+    invoices = get_invoices_by_org(org_id)
+    return invoices
+
+
+@billing_router.get("/api/billing/invoices/{invoice_id}/download")
+def api_download_invoice(invoice_id: int, current_user: dict = Depends(get_current_user)):
+    org_id = current_user.get("org_id")
+    inv = get_invoice(invoice_id)
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv['org_id'] != org_id:
+        raise HTTPException(403, "Not authorized to view this invoice")
+
+    # Build display values
+    org_name = inv.get('org_name', 'Customer')
+    razorpay_pid = inv.get('razorpay_payment_id', 'N/A')
+    plan_desc = inv.get('payment_description', 'Subscription')
+    # Extract plan name from description like "Plan: Growth"
+    plan_name = plan_desc.replace("Plan: ", "") if plan_desc else "Subscription"
+    amount_inr = inv['amount_paise'] / 100
+    payment_date = inv['created_at'].strftime("%d %b %Y") if inv.get('created_at') else "N/A"
+
+    html = generate_invoice_html(
+        org_name=org_name,
+        plan_name=plan_name,
+        amount_inr=amount_inr,
+        payment_id=razorpay_pid,
+        payment_date=payment_date,
+        invoice_number=inv['invoice_number'],
+    )
+
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Content-Disposition": f"inline; filename=\"{inv['invoice_number']}.html\"",
+        },
+    )
 
 
 # ─── Razorpay Webhook (no auth — verified by signature) ──────────────────────
