@@ -3,6 +3,7 @@ check_crash.py
 check_env.py
 check_ps.py
 check_remote_logs.py
+clean_db.py
 fetch_logs.py
 fix_main.py
 get_indian_voices.py
@@ -11,6 +12,7 @@ get_smallest_voices.py
 hotfix.py
 inject_knowledge.py
 print_routes.py
+provision_demo.py
 revert_tts.py
 set_aravind.py
 set_hindi_voice.py
@@ -44,7 +46,7 @@ frontend/node_modules/
 
 # Environment files
 .env
-.env.*
+.env.docker
 
 # Python
 __pycache__/
