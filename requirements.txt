@@ -1,8 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
+uvloop
+watchfiles
 websockets
 twilio
-deepgram-sdk
+deepgram-sdk>=3.0.0,<4.0.0
 google-genai
 httpx
 python-dotenv

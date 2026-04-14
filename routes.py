@@ -81,7 +81,7 @@ class DocumentCreate(BaseModel):
 
 class CampaignCreate(BaseModel):
     name: str
-    product_id: int
+    product_id: Optional[int] = None
     lead_source: Optional[str] = None
 
 class CampaignUpdate(BaseModel):
@@ -892,18 +892,12 @@ async def api_scrape_product_website(product_id: int, current_user: dict = Depen
             f"5. Key benefits\n6. Pricing model (if known)\n\nBe concise — max 500 words."
         )
     try:
-        groq_key = os.getenv("GROQ_API_KEY", "")
-        if groq_key:
-            async with httpx.AsyncClient() as client:
-                scrape_resp = await client.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-                    json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": scrape_prompt}], "max_tokens": 1000, "temperature": 0.3},
-                    timeout=30
-                )
-                scraped_info = scrape_resp.json()["choices"][0]["message"]["content"]
-        else:
-            scraped_info = "No LLM API key configured."
+        from llm_provider import generate_response
+        scraped_info = await generate_response(
+            chat_history=[{"role": "user", "parts": [{"text": scrape_prompt}]}],
+            system_instruction="You are a product analyst. Be concise and factual.",
+            max_tokens=1000,
+        )
     except Exception as e:
         logger.error(f"[SCRAPE] LLM extraction failed: {e}")
         scraped_info = f"LLM extraction failed: {str(e)}"

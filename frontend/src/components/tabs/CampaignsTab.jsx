@@ -30,8 +30,9 @@ export default function CampaignsTab({
   const [showEditCampaignModal, setShowEditCampaignModal] = useState(false);
   const [editCampaignForm, setEditCampaignForm] = useState({ name: '', product_id: '', lead_source: '' });
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [createError, setCreateError] = useState('');
   const eventSourceRef = React.useRef(null);
-  const [campVoice, setCampVoice] = useState({tts_provider: '', tts_voice_id: '', tts_language: ''});
+  const [campVoice, setCampVoice] = useState({ tts_provider: '', tts_voice_id: '', tts_language: '' });
 
   useEffect(() => { fetchCampaigns(); }, []);
 
@@ -39,14 +40,14 @@ export default function CampaignsTab({
     try {
       const res = await apiFetch(`${API_URL}/campaigns/${campaignId}/leads`);
       setCampaignLeads(await res.json());
-    } catch(e) { setCampaignLeads([]); }
+    } catch (e) { setCampaignLeads([]); }
   };
 
   const fetchCallLog = async (campaignId) => {
     try {
       const res = await apiFetch(`${API_URL}/campaigns/${campaignId}/call-log`);
       setCallLog(await res.json());
-    } catch(e) { setCallLog([]); }
+    } catch (e) { setCallLog([]); }
   };
 
   const fetchCampVoice = async (campaignId) => {
@@ -54,28 +55,28 @@ export default function CampaignsTab({
       const res = await apiFetch(`${API_URL}/campaigns/${campaignId}/voice-settings`);
       if (res.ok) {
         const data = await res.json();
-        setCampVoice({tts_provider: data.tts_provider || '', tts_voice_id: data.tts_voice_id || '', tts_language: data.tts_language || ''});
+        setCampVoice({ tts_provider: data.tts_provider || '', tts_voice_id: data.tts_voice_id || '', tts_language: data.tts_language || '' });
       } else {
-        setCampVoice({tts_provider: '', tts_voice_id: '', tts_language: ''});
+        setCampVoice({ tts_provider: '', tts_voice_id: '', tts_language: '' });
       }
-    } catch(e) { setCampVoice({tts_provider: '', tts_voice_id: '', tts_language: ''}); }
+    } catch (e) { setCampVoice({ tts_provider: '', tts_voice_id: '', tts_language: '' }); }
   };
 
   const handleSaveCampVoice = async () => {
     if (!selectedCampaign) return;
     await apiFetch(`${API_URL}/campaigns/${selectedCampaign.id}/voice-settings`, {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({tts_provider: campVoice.tts_provider, tts_voice_id: campVoice.tts_voice_id, tts_language: campVoice.tts_language})
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts_provider: campVoice.tts_provider, tts_voice_id: campVoice.tts_voice_id, tts_language: campVoice.tts_language })
     });
   };
 
   const handleResetCampVoice = async () => {
     if (!selectedCampaign) return;
     await apiFetch(`${API_URL}/campaigns/${selectedCampaign.id}/voice-settings`, {
-      method: 'PUT', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({tts_provider: '', tts_voice_id: '', tts_language: ''})
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tts_provider: '', tts_voice_id: '', tts_language: '' })
     });
-    setCampVoice({tts_provider: '', tts_voice_id: '', tts_language: ''});
+    setCampVoice({ tts_provider: '', tts_voice_id: '', tts_language: '' });
   };
 
   const handleViewCampaign = (campaign) => {
@@ -115,22 +116,29 @@ export default function CampaignsTab({
     e.preventDefault();
     if (!createForm.name.trim()) return;
     setLoading(true);
+    setCreateError('');
     try {
       const res = await apiFetch(`${API_URL}/campaigns`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: createForm.name.trim(),
-          product_id: createForm.product_id || null,
+          product_id: createForm.product_id ? parseInt(createForm.product_id) : null,
           lead_source: createForm.lead_source || null,
-          org_id: selectedOrg?.id || null
         })
       });
-      const newCampaign = await res.json();
+
+      let newCampaign;
+      try { newCampaign = await res.json(); } catch { newCampaign = {}; }
+
+      if (!res.ok) {
+        const msg = newCampaign?.detail || `Server error (${res.status})`;
+        setCreateError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+        return;
+      }
 
       // Apply template settings if one was selected
       if (selectedTemplate && newCampaign?.id) {
-        // Set voice settings
         await apiFetch(`${API_URL}/campaigns/${newCampaign.id}/voice-settings`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -141,7 +149,6 @@ export default function CampaignsTab({
           })
         });
 
-        // Set product prompt if a product was linked
         const productId = createForm.product_id || newCampaign.product_id;
         if (productId) {
           await apiFetch(`${API_URL}/products/${productId}/prompt`, {
@@ -157,10 +164,15 @@ export default function CampaignsTab({
 
       setCreateForm({ name: '', product_id: '', lead_source: '' });
       setSelectedTemplate(null);
+      setCreateError('');
       setShowCreateModal(false);
       fetchCampaigns();
-    } catch(e) { console.error(e); }
-    setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setCreateError('Network error — please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteCampaign = async (campaignId) => {
@@ -168,7 +180,7 @@ export default function CampaignsTab({
     try {
       await apiFetch(`${API_URL}/campaigns/${campaignId}`, { method: 'DELETE' });
       fetchCampaigns();
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const handleToggleStatus = async (campaign) => {
@@ -183,7 +195,7 @@ export default function CampaignsTab({
       if (selectedCampaign?.id === campaign.id) {
         setSelectedCampaign({ ...campaign, status: nextStatus });
       }
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const handleEditCampaign = (campaign) => {
@@ -220,7 +232,7 @@ export default function CampaignsTab({
           lead_source: editCampaignForm.lead_source || null
         }));
       }
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
@@ -237,7 +249,7 @@ export default function CampaignsTab({
       setShowAddLeadsModal(false);
       fetchCampaignLeads(selectedCampaign.id);
       fetchCampaigns();
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
@@ -246,7 +258,7 @@ export default function CampaignsTab({
       await apiFetch(`${API_URL}/campaigns/${selectedCampaign.id}/leads/${leadId}`, { method: 'DELETE' });
       fetchCampaignLeads(selectedCampaign.id);
       fetchCampaigns();
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const handleEditLead = (lead) => {
@@ -263,7 +275,7 @@ export default function CampaignsTab({
       });
       setEditLead(null);
       fetchCampaignLeads(selectedCampaign.id);
-    } catch(e) { alert('Save failed'); }
+    } catch (e) { alert('Save failed'); }
   };
 
   const handleLeadStatusChange = async (leadId, newStatus) => {
@@ -274,7 +286,7 @@ export default function CampaignsTab({
         body: JSON.stringify({ status: newStatus })
       });
       fetchCampaignLeads(selectedCampaign.id);
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
   };
 
   const toggleLeadSelection = (leadId) => {
@@ -321,7 +333,7 @@ export default function CampaignsTab({
       setShowCsvImportModal(false);
       fetchCampaignLeads(selectedCampaign.id);
       fetchCampaigns();
-    } catch(e) { console.error(e); }
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
@@ -410,53 +422,57 @@ export default function CampaignsTab({
 
   // ─── LIST VIEW ───
   return (
-    <div style={{padding: '1rem'}}>
-      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
-        <h2 style={{margin: 0, color: '#e2e8f0'}}>📢 Campaigns</h2>
+    <div style={{ padding: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h2 style={{ margin: 0, color: '#e2e8f0' }}>📢 Campaigns</h2>
         <button className="btn-primary" onClick={() => setShowCreateModal(true)}>+ Create Campaign</button>
       </div>
 
       {campaigns.length === 0 ? (
-        <div className="glass-panel" style={{textAlign: 'center', padding: '3rem', color: '#64748b'}}>
+        <div className="glass-panel" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
           No campaigns yet. Create one to start dialing!
         </div>
       ) : (
-        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem'}}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
           {campaigns.map(campaign => {
             const stats = getCampaignStats(campaign);
             return (
-              <div key={campaign.id} className="glass-panel" style={{padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '10px'}}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+              <div key={campaign.id} className="glass-panel" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <div style={{fontWeight: 700, fontSize: '1.05rem', color: '#e2e8f0', marginBottom: '6px'}}>{campaign.name}</div>
-                    <div style={{display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap'}}>
+                    <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#e2e8f0', marginBottom: '6px' }}>{campaign.name}</div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       {campaign.product_id && (
-                        <span style={{background: 'rgba(6,182,212,0.2)', color: '#22d3ee', fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 600}}>
+                        <span style={{ background: 'rgba(6,182,212,0.2)', color: '#22d3ee', fontSize: '0.7rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
                           {getProductName(campaign.product_id)}
                         </span>
                       )}
                       {statusBadge(campaign.status || 'active')}
                     </div>
                   </div>
-                  <div style={{display: 'flex', gap: '6px'}}>
+                  <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={(e) => { e.stopPropagation(); handleEditCampaign(campaign); }}
-                      style={{background: 'rgba(250,204,21,0.1)', border: '1px solid rgba(250,204,21,0.3)',
-                        color: '#facc15', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.7rem'}}>
+                      style={{
+                        background: 'rgba(250,204,21,0.1)', border: '1px solid rgba(250,204,21,0.3)',
+                        color: '#facc15', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.7rem'
+                      }}>
                       Edit
                     </button>
                     <button onClick={() => handleDeleteCampaign(campaign.id)}
-                      style={{background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                        color: '#fca5a5', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.7rem'}}>
+                      style={{
+                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                        color: '#fca5a5', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.7rem'
+                      }}>
                       Delete
                     </button>
                   </div>
                 </div>
 
-                <div style={{display: 'flex', gap: '12px', fontSize: '0.75rem', color: '#94a3b8'}}>
-                  <span>Total: <strong style={{color: '#e2e8f0'}}>{stats.total}</strong></span>
-                  <span>Called: <strong style={{color: '#e2e8f0'}}>{stats.called}</strong></span>
-                  <span>Qualified: <strong style={{color: '#22c55e'}}>{stats.qualified}</strong></span>
-                  <span>Booked: <strong style={{color: '#60a5fa'}}>{stats.booked}</strong></span>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '0.75rem', color: '#94a3b8' }}>
+                  <span>Total: <strong style={{ color: '#e2e8f0' }}>{stats.total}</strong></span>
+                  <span>Called: <strong style={{ color: '#e2e8f0' }}>{stats.called}</strong></span>
+                  <span>Qualified: <strong style={{ color: '#22c55e' }}>{stats.qualified}</strong></span>
+                  <span>Booked: <strong style={{ color: '#60a5fa' }}>{stats.booked}</strong></span>
                 </div>
 
                 <button onClick={() => handleViewCampaign(campaign)}
@@ -479,6 +495,7 @@ export default function CampaignsTab({
         setCreateForm={setCreateForm}
         handleCreateCampaign={handleCreateCampaign}
         loading={loading}
+        createError={createError}
         orgProducts={orgProducts}
         selectedTemplate={selectedTemplate}
         setSelectedTemplate={setSelectedTemplate}

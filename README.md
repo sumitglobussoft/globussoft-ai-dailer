@@ -195,18 +195,226 @@ External Model Clients.
     - Auto-cleanup fixture removes test data after each session.
     - GitHub Actions CI pipeline runs all tests on every push.
 
-## 🛠 Getting Started
+## 🐳 Docker Local Deployment (Recommended)
 
-Follow these instructions to set up, run, and test the Generative AI Dialer locally.
+The fastest way to run the full stack locally — no manual MySQL/Redis setup required. Requires **Docker Desktop** and **Docker Compose v2**.
+
+### 1. Copy the environment template
+
+```bash
+cp .env.docker .env.docker.local
+```
+
+Edit `.env.docker.local` and fill in your real API keys (Groq/Gemini, Deepgram, ElevenLabs, Twilio/Exotel). The internal service hostnames (`MYSQL_HOST=db`, `REDIS_URL=redis://:localredis123@redis:6379/1`) are pre-wired for docker-compose and should not be changed.
+
+### 2. Build and start all services
+
+```bash
+docker compose --env-file .env.docker up --build
+```
+
+This will:
+- Build the **React frontend** (Node 20) and embed it into the backend image
+- Start **MySQL 8.0** on port `3307` (avoids conflicts with any local MySQL on 3306)
+- Start **Redis 7** on port `6380`
+- Start the **FastAPI backend** on port `8001` (waits for DB + Redis health checks)
+- Pre-download the `sentence-transformers/all-MiniLM-L6-v2` model at build time
+
+First build takes ~5–10 minutes (downloading base images + pip install). Subsequent builds are cached.
+
+### 3. Verify the services are healthy
+
+```bash
+# Overall health check
+curl http://localhost:8001/ping
+
+# Detailed service health (DB, Redis, scheduler, retry worker)
+curl http://localhost:8001/api/debug/health
+```
+
+### 4. Seed the first admin user
+
+On a fresh database, create your first organization and admin account:
+
+```bash
+docker compose exec app python - <<'EOF'
+from database import get_conn
+from auth import get_password_hash
+import datetime
+
+conn = get_conn()
+cur = conn.cursor()
+
+# Create organization
+cur.execute("INSERT INTO organizations (name, timezone) VALUES (%s, %s)", ("My Org", "Asia/Kolkata"))
+org_id = cur.lastrowid
+
+# Create admin user
+cur.execute(
+    "INSERT INTO users (org_id, full_name, email, password_hash, role) VALUES (%s, %s, %s, %s, %s)",
+    (org_id, "Admin", "admin@example.com", get_password_hash("yourpassword"), "admin")
+)
+conn.commit()
+cur.close()
+conn.close()
+print(f"Created org_id={org_id}, login: admin@example.com / yourpassword")
+EOF
+```
+
+### 5. Access the app
+
+Open `http://localhost:8001` in your browser and log in with the credentials you set in step 4.
+
+### Useful Docker commands
+
+```bash
+# Run in detached (background) mode
+docker compose --env-file .env.docker up -d
+
+# View live logs
+docker compose logs -f app
+
+# Stop all services
+docker compose down
+
+# Stop and wipe all data volumes (full reset)
+docker compose down -v
+
+# Rebuild after code changes
+docker compose --env-file .env.docker up --build app
+```
+
+### Service port map
+
+| Service | Internal port | Exposed locally |
+|---------|--------------|-----------------|
+| FastAPI app | 8001 | 8001 |
+| MySQL 8.0 | 3306 | **3307** |
+| Redis 7 | 6379 | **6380** |
+
+Connect to MySQL locally: `mysql -h 127.0.0.1 -P 3307 -u callified -pCallified@2026 callified_ai`
+
+---
+
+## 🔁 Docker Dev Mode (Hot Reload)
+
+A `docker-compose.override.yml` file is included that enables full hot-reload for **both** backend and frontend inside Docker. It is picked up **automatically** — no extra flags needed.
+
+**What it does:**
+- **Backend** — mounts repo into the `app` container, runs uvicorn with `--reload` so any `.py` save triggers an instant restart
+- **Frontend** — adds a dedicated `frontend` service (`node:20-alpine`) running the Vite dev server with full HMR; any `frontend/src/` save updates the browser instantly
+- Drops `--loop uvloop` from uvicorn (incompatible with `--reload`)
+- Disables `restart: always` on both services so crashes stay visible in logs
+
+> **Note:** `watchfiles` is required for uvicorn `--reload`. It is in `requirements.txt` (`uvicorn[standard]` + `watchfiles`). Run `--build` once after a fresh pull.
+
+### Starting the dev stack
+
+```bash
+docker compose --env-file .env.docker up app frontend
+```
+
+This starts **4 containers** total: `db`, `redis`, `app` (backend), `frontend` (Vite HMR).
+
+**Open `http://localhost:5173` in your browser** — not 8001. The Vite dev server proxies all `/api`, `/ws`, `/ping` and `/recordings` requests to the FastAPI backend on port 8001.
+
+### Port map in dev mode
+
+| Container | What it serves | URL |
+|-----------|---------------|-----|
+| `frontend` | React app (Vite HMR) | **http://localhost:5173** ← use this |
+| `app` | FastAPI + last built static files | http://localhost:8001 |
+| `db` | MySQL 8.0 | localhost:3307 |
+| `redis` | Redis 7 | localhost:6380 |
+
+### Backend hot-reload
+
+Edit any `.py` file and save. You'll see in the logs within ~1 second:
+```
+WARNING:  WatchFiles detected changes in 'routes.py', reloading...
+INFO:     Application startup complete.
+```
+
+### Frontend HMR
+
+Edit any file under `frontend/src/` and save. The browser updates instantly without a full page reload — React state is preserved where possible.
+
+### First-time build (or after adding pip packages)
+
+```bash
+docker compose --env-file .env.docker up --build app frontend
+```
+
+### Skip the override (production build)
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.yml up --build
+```
+
+### Summary
+
+| Change type | Action needed | Reload type |
+|-------------|--------------|-------------|
+| Backend `.py` file | Save the file | uvicorn restarts (~1s) |
+| `frontend/src/` file | Save the file | Vite HMR (instant, no page reload) |
+| New pip package in `requirements.txt` | `docker compose up --build app` | Full image rebuild |
+| New npm package in `package.json` | `docker compose restart frontend` | npm install + Vite restart |
+| Env var in `.env.docker` | `docker compose up app frontend` | No rebuild needed |
+
+---
+
+## 🐛 Docker Troubleshooting
+
+### `Unknown column 'tts_provider' in 'field list'`
+
+**Cause:** The `organizations` table was created before voice-settings columns were added. `CREATE TABLE IF NOT EXISTS` won't add new columns to an existing table.
+
+**Fix (automatic):** `init_db()` in `database.py` runs `ALTER TABLE organizations ADD COLUMN` migrations on every startup with try/except — the columns are added automatically on the next container start. If you still see the error, restart the app container:
+
+```bash
+docker compose restart app
+```
+
+### `ImportError: cannot import name 'LiveTranscriptionEvents' from 'deepgram'`
+
+**Cause:** `deepgram-sdk` v6 (Fern-generated rewrite) removed `LiveTranscriptionEvents`. This app requires v3.x.
+
+**Fix:** `requirements.txt` pins `deepgram-sdk>=3.0.0,<4.0.0`. Rebuild the image:
+
+```bash
+docker compose --env-file .env.docker up --build app
+```
+
+### `--reload` not watching files / uvicorn starts but doesn't restart on save
+
+**Cause 1:** `watchfiles` not installed in the image (built before it was added to `requirements.txt`).
+**Fix:** `docker compose --env-file .env.docker up --build app`
+
+**Cause 2:** `--loop uvloop` and `--reload` were both set — they are mutually exclusive.
+**Fix:** Already resolved in `docker-compose.override.yml` — `--loop uvloop` is omitted in dev mode.
+
+### App container exits immediately with low memory (~25 MB shown in `docker ps`)
+
+**Cause:** uvicorn spawned with `--workers N` causes subprocess crashes that PM2/Docker shows as "running" while the actual worker is dead.
+
+**Fix:** Do not use `--workers` in Docker. The `CMD` in `Dockerfile` and the override both use a single process.
+
+---
+
+## 🛠 Manual Local Setup (Without Docker)
+
+Follow these instructions to set up, run, and test the Generative AI Dialer locally without Docker.
 
 ### Prerequisites
 
 You will need the following installed on your machine:
 - **Node.js** (v16 or higher)
-- **Python** (3.9 or higher)
+- **Python 3.10** (required — 3.9 may work but is untested)
+- **MySQL 8.0**
+- **Redis 7**
 - **Git**
 
-You will also need accounts and API keys for the following services:
+You will also need accounts and API keys for the following external services:
 - **Twilio** or **Exotel** (For telecom/dialing)
 - **Deepgram** (For prompt Speech-to-Text)
 - **Google AI Studio / Gemini** (For the core conversation and sales LLM logic)

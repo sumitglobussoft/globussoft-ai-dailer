@@ -1,0 +1,70 @@
+services:
+
+  # ─── MySQL 8.0 ──────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: callified-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: callified_ai
+      MYSQL_USER: callified
+      MYSQL_PASSWORD: Callified@2026
+    ports:
+      - "3307:3306"          # exposed on 3307 locally to avoid conflicts
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "callified", "-pCallified@2026"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── Redis 7 ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: callified-redis
+    restart: unless-stopped
+    command: redis-server --requirepass callified_redis_pass
+    ports:
+      - "6380:6379"          # exposed on 6380 locally to avoid conflicts
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "callified_redis_pass", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Callified AI App ────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: callified-app
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env.docker
+    volumes:
+      - recordings:/app/recordings
+      - faiss_indexes:/app/faiss_indexes
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s    # give time for model load on first run
+
+volumes:
+  mysql_data:
+  redis_data:
+  recordings:
+  faiss_indexes:

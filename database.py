@@ -40,7 +40,17 @@ def get_conn():
 def init_db():
     conn = get_conn()
     cursor = conn.cursor()
-    
+
+    # organizations must be created first — all other tables FK-reference it
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS organizations (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            timezone VARCHAR(100) DEFAULT 'Asia/Kolkata',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS leads (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -175,15 +185,6 @@ def init_db():
             call_duration_s FLOAT DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE SET NULL
-        )
-    ''')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS organizations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            timezone VARCHAR(100) DEFAULT 'Asia/Kolkata',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -454,6 +455,24 @@ def init_db():
         cursor.execute("ALTER TABLE organizations ADD COLUMN onboarding_completed BOOLEAN DEFAULT FALSE")
     except Exception:
         pass  # Column already exists
+
+    # --- Voice settings + custom prompt column migrations (organizations) ---
+    for col, definition in [
+        ("tts_provider",        "VARCHAR(50) DEFAULT NULL"),
+        ("tts_voice_id",        "VARCHAR(255) DEFAULT NULL"),
+        ("tts_language",        "VARCHAR(10) DEFAULT NULL"),
+        ("custom_system_prompt","LONGTEXT DEFAULT NULL"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE organizations ADD COLUMN {col} {definition}")
+        except Exception:
+            pass  # Column already exists
+
+    # --- Allow campaigns.product_id to be NULL (product is now optional) ---
+    try:
+        cursor.execute("ALTER TABLE campaigns MODIFY COLUMN product_id INT NULL")
+    except Exception:
+        pass  # Already nullable or campaigns table doesn't exist yet
 
     conn.close()
 
@@ -1055,7 +1074,7 @@ def get_campaigns_by_org(org_id: int) -> List[Dict]:
     cursor.execute('''
         SELECT c.*, p.name as product_name
         FROM campaigns c
-        JOIN products p ON c.product_id = p.id
+        LEFT JOIN products p ON c.product_id = p.id
         WHERE c.org_id = %s
         ORDER BY c.created_at DESC
     ''', (org_id,))

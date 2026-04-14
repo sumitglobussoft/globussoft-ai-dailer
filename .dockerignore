@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info
+dist
+build
+venv
+.venv
+env
+
+# Node
+node_modules
+frontend/node_modules
+
+# Frontend build output (built inside Docker)
+frontend/dist
+
+# Env files (injected via docker-compose env_file)
+.env
+.env.local
+.env.production
+
+# Runtime data (mounted as volumes)
+recordings/
+faiss_indexes/
+
+# Logs
+*.log
+ngrok.log
+
+# Test files
+tests/
+*.test.py
+screenshots/
+*.png
+
+# Dev/CI files
+.github/
+.claude/
+*.md
+!README.md
+
+# Misc
+.DS_Store
+*.db
+*.sqlite
+deploy.tar.gz
+deploy.zip

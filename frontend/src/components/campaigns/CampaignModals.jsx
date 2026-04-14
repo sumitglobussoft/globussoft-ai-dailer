@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CAMPAIGN_TEMPLATES, INDUSTRY_COLORS, LANGUAGE_LABELS } from '../../constants/campaignTemplates';
 
 export default function CampaignModals({
   // Create Campaign Modal
   showCreateModal, setShowCreateModal,
   createForm, setCreateForm,
-  handleCreateCampaign, loading, orgProducts,
+  handleCreateCampaign, loading, createError, orgProducts,
   selectedTemplate, setSelectedTemplate,
   // Add Leads Modal
   showAddLeadsModal, setShowAddLeadsModal,
@@ -20,13 +20,23 @@ export default function CampaignModals({
   // Edit Campaign Modal
   showEditCampaignModal, setShowEditCampaignModal,
   editCampaignForm, setEditCampaignForm,
-  handleSaveEditCampaign
+  handleSaveEditCampaign,
 }) {
+  const [nameTouched, setNameTouched] = useState(false);
+  const nameEmpty = !createForm.name.trim();
+  const showNameError = nameTouched && nameEmpty;
+
+  const handleClose = () => {
+    setNameTouched(false);
+    setShowCreateModal(false);
+    if (setSelectedTemplate) setSelectedTemplate(null);
+  };
+
   return (
     <>
       {/* Create Campaign Modal */}
       {showCreateModal && (
-        <div className="modal-overlay" onClick={() => { setShowCreateModal(false); setSelectedTemplate && setSelectedTemplate(null); }}>
+        <div className="modal-overlay" onClick={handleClose}>
           <div className="glass-panel" onClick={e => e.stopPropagation()}
             style={{maxWidth: '680px', width: '95%', maxHeight: '85vh', overflowY: 'auto'}}>
             <h3 style={{marginTop: 0, color: '#e2e8f0'}}>Create New Campaign</h3>
@@ -82,15 +92,33 @@ export default function CampaignModals({
             </div>
 
             <div style={{borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1rem'}}>
-              <form onSubmit={handleCreateCampaign}>
+              <form onSubmit={e => { setNameTouched(true); handleCreateCampaign(e); }}>
                 <div style={{marginBottom: '1rem'}}>
-                  <label style={{display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '4px'}}>Campaign Name</label>
-                  <input className="form-input" placeholder="e.g. AdsGPT March Campaign"
-                    value={createForm.name} onChange={e => setCreateForm({...createForm, name: e.target.value})}
-                    style={{width: '100%'}} />
+                  <label style={{display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '4px'}}>
+                    Campaign Name <span style={{color: '#ef4444'}}>*</span>
+                  </label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. AdsGPT March Campaign"
+                    value={createForm.name}
+                    onChange={e => { setNameTouched(true); setCreateForm({...createForm, name: e.target.value}); }}
+                    onBlur={() => setNameTouched(true)}
+                    style={{
+                      width: '100%',
+                      borderColor: showNameError ? 'rgba(239,68,68,0.6)' : undefined,
+                      boxShadow: showNameError ? '0 0 0 3px rgba(239,68,68,0.15)' : undefined,
+                    }}
+                  />
+                  {showNameError && (
+                    <p style={{margin: '4px 0 0', fontSize: '0.78rem', color: '#f87171'}}>
+                      Campaign name is required.
+                    </p>
+                  )}
                 </div>
                 <div style={{marginBottom: '1.5rem'}}>
-                  <label style={{display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '4px'}}>Product {selectedTemplate && <span style={{color: '#60a5fa', fontSize: '0.75rem'}}>(required to apply prompt template)</span>}</label>
+                  <label style={{display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '4px'}}>
+                    Product {selectedTemplate && <span style={{color: '#60a5fa', fontSize: '0.75rem'}}>(required to apply prompt template)</span>}
+                  </label>
                   <select className="form-input" value={createForm.product_id}
                     onChange={e => setCreateForm({...createForm, product_id: e.target.value})}
                     style={{width: '100%'}}>
@@ -113,12 +141,19 @@ export default function CampaignModals({
                     <option value="cold">Cold Outreach</option>
                   </select>
                 </div>
+                {createError && (
+                  <div style={{marginBottom: '1rem', padding: '10px 14px', borderRadius: '8px',
+                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                    color: '#fca5a5', fontSize: '0.85rem'}}>
+                    {createError}
+                  </div>
+                )}
                 <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
-                  <button type="button" onClick={() => { setShowCreateModal(false); setSelectedTemplate && setSelectedTemplate(null); }}
+                  <button type="button" onClick={handleClose}
                     style={{background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer'}}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn-primary" disabled={loading || !createForm.name.trim()}>
+                  <button type="submit" className="btn-primary" disabled={loading}>
                     {loading ? 'Creating...' : selectedTemplate ? 'Create from Template' : 'Create'}
                   </button>
                 </div>
@@ -166,7 +201,7 @@ export default function CampaignModals({
         <div className="modal-overlay" onClick={() => setShowCsvImportModal(false)}>
           <div className="glass-panel" onClick={e => e.stopPropagation()}
             style={{maxWidth: '450px', width: '90%'}}>
-            <h3 style={{marginTop: 0, color: '#e2e8f0'}}>📤 Import Leads from CSV</h3>
+            <h3 style={{marginTop: 0, color: '#e2e8f0'}}>Import Leads from CSV</h3>
             <p style={{color: '#94a3b8', fontSize: '0.85rem', marginBottom: '1rem'}}>
               Upload a CSV with columns: first_name, last_name, phone, source. Leads will be created and added to this campaign.
             </p>
@@ -240,7 +275,7 @@ export default function CampaignModals({
       {editLead && (
         <div className="modal-overlay" onClick={() => setEditLead(null)}>
           <div className="glass-panel modal-content" onClick={e => e.stopPropagation()} style={{maxWidth: '420px'}}>
-            <h2 style={{marginTop: 0, marginBottom: '1.5rem'}}>✏️ Edit Lead</h2>
+            <h2 style={{marginTop: 0, marginBottom: '1.5rem'}}>Edit Lead</h2>
             <div className="form-group">
               <label>First Name</label>
               <input className="form-input" value={editForm.first_name} onChange={e => setEditForm({...editForm, first_name: e.target.value})} />

@@ -84,6 +84,7 @@ export default function App() {
         handleLogout={logout}
       />
 
+      <main className="main-content">
       <Routes>
         <Route path="/" element={<Navigate to="/crm" replace />} />
         <Route path="/crm" element={
@@ -137,6 +138,7 @@ export default function App() {
         <Route path="/team" element={<TeamPage apiFetch={apiFetch} API_URL={API_URL} />} />
         <Route path="*" element={<Navigate to="/crm" replace />} />
       </Routes>
+      </main>
 
     </div>
   );
