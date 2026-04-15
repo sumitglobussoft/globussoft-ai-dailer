@@ -54,7 +54,7 @@ export default function AuthPage() {
     }}>
       <div style={{ width: '100%', maxWidth: '440px' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <img src="/login_logo.png" alt="Callified AI" style={{ maxWidth: '240px', width: '100%', height: 'auto' }} />
+          <img src="/login_logo.png" alt="Callified AI" style={{ maxWidth: '360px', width: '100%', height: 'auto' }} />
           <span style={{ display: 'none' }} data-version="2.0.1" />
         </div>
 
