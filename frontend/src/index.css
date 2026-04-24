@@ -266,6 +266,28 @@ body {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* Tab bar: always scrollable, never wraps */
+.tab-bar {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.5) rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+.tab-bar::-webkit-scrollbar {
+  height: 4px;
+}
+.tab-bar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+.tab-bar::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.5);
+  border-radius: 4px;
+}
+.tab-bar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.8);
+}
 .btn-punch {
   width: 100%;
   padding: 1rem;
