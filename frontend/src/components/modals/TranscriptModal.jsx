@@ -13,6 +13,8 @@ const LANG_NAMES = {
   kn: 'Kannada',  ml: 'Malayalam',
 };
 
+// (cache-bust 2026-04-30: force a fresh bundle hash so Cloudflare can't keep
+// serving the stale 404 from the earlier upload-to-wrong-dir mistake)
 // agentDisplayName scans an AI turn's text for the persona name the AI
 // announced ("Hi …, I'm Aditya …" / "this is Raj …" / "मैं कबीर बात कर रहा
 // हूं …"). Returns the bare name when found, otherwise the generic "AI"
@@ -31,7 +33,13 @@ const NAME_PATTERNS = [
   /(?:मैं|मे)\s+([A-Z][a-zA-Z]{1,18})/,           // Devanagari sentence with Roman name
   /(?:मैं|मे)\s+([ऀ-ॿ]{2,12})\s+(?:बात|बोल)/, // "मैं कबीर बात कर रहा हूँ"
 ];
+// Build identifier kept as a real string literal (not just a comment) so
+// minification can't strip it — guarantees a fresh bundle-hash whenever we
+// bump it, which is necessary to bust Cloudflare's stale-404 cache when a
+// deploy mis-routes the previous upload.
+const TRANSCRIPT_MODAL_BUILD_ID = 'transcript-modal-2026-04-30-cf-bust';
 function extractAgentName(turns) {
+  if (typeof TRANSCRIPT_MODAL_BUILD_ID !== 'string') return 'AI'; // unreachable; pins the constant into the emitted bundle
   if (!Array.isArray(turns)) return 'AI';
   for (const t of turns) {
     if ((t.role || '').toLowerCase() !== 'ai' && (t.role || '').toLowerCase() !== 'model') continue;
